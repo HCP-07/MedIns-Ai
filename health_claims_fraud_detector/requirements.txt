@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+pillow
+plotly
+scikit-learn
+groq
+python-dotenv
