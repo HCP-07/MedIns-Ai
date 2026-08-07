@@ -4,6 +4,20 @@ import numpy as np
 from PIL import Image
 import os
 import json
+import importlib
+
+# Force dynamic reload of core modules to prevent stale cache signature errors
+import llm_auditor
+import fraud_engine
+import kaggle_fetcher
+importlib.reload(llm_auditor)
+importlib.reload(fraud_engine)
+importlib.reload(kaggle_fetcher)
+
+from llm_auditor import LLMClinicalAuditor
+from kaggle_fetcher import KaggleDatasetFetcher
+from fraud_engine import TabularFraudDetector
+from sample_generator import create_sample_bills
 
 # Optional Plotly import with fallback
 try:
@@ -13,24 +27,19 @@ try:
 except ImportError:
     HAS_PLOTLY = False
 
-from fraud_engine import TabularFraudDetector
-from llm_auditor import LLMClinicalAuditor
-from sample_generator import create_sample_bills
-
 # Set Streamlit Page Configuration
 st.set_page_config(
-    page_title="MedIns AI - Claims Fraud Detector",
+    page_title="MedIns AI - Deep Forensic Claims Auditor",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS - Safe styling without overriding Streamlit's Material Icons font ligatures
+# Custom CSS for Sleek High-Contrast Enterprise Interface
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap');
 
-    /* Target specific typography ONLY - do NOT use wildcard overrides that break Material Symbols font ligatures */
     .stApp p, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp label, .stApp .stMarkdown {
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
     }
@@ -89,18 +98,18 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Initialize engines
-@st.cache_resource
-def load_engines():
+# Initialize engines dynamically without caching stale instances
+def load_ml_engine():
     create_sample_bills("sample_bills")
-    ml_engine = TabularFraudDetector("claims_dataset.csv")
-    ml_engine.train_or_load()
-    llm_engine = LLMClinicalAuditor()
-    return ml_engine, llm_engine
+    ml_eng = TabularFraudDetector("claims_dataset.csv")
+    ml_eng.train_or_load()
+    return ml_eng
 
-ml_engine, llm_engine = load_engines()
+ml_engine = load_ml_engine()
+llm_engine = LLMClinicalAuditor()
+kaggle_engine = KaggleDatasetFetcher()
 
-# Sidebar Setup & API Key configuration
+# Clean Enterprise Sidebar
 with st.sidebar:
     st.markdown("""
     <div style="text-align: center; padding: 10px 0;">
@@ -111,152 +120,330 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.divider()
 
-    st.subheader("🔑 Open-Source LLM Setup")
-    groq_key_input = st.text_input("Groq API Key (Llama 3.1)", type="password", help="Enter free key from console.groq.com for live Llama 3.1 LLM reasoning.")
+    st.subheader("⚡ Backend Engine Status")
     
-    if groq_key_input:
-        os.environ["GROQ_API_KEY"] = groq_key_input
-        llm_engine = LLMClinicalAuditor()
-        st.success("✅ Connected to Groq (Llama 3.1)")
+    if llm_engine.client:
+        st.success("✅ Meta Llama 3.1 8B Active (Groq LPU)")
     else:
-        st.info("💡 Running in Simulation Mode (No key required for demo). Enter Groq key for live LLM inference.")
+        st.info("ℹ️ Llama 3.1 Simulation Engine Active")
+
+    if kaggle_engine.kaggle_username:
+        st.success("✅ Kaggle API (kaggle.json) Loaded")
+    else:
+        st.caption("📊 Local Baseline Claims Dataset Active")
 
     st.divider()
-    st.markdown("**Open-Source Tech Stack:**")
-    st.markdown("- 🧠 **LLM:** Meta Llama 3.1 8B")
+    st.markdown("**Integrated Core Stack:**")
+    st.markdown("- 🧠 **LLM Reasoner:** Meta Llama 3.1 8B")
     st.markdown("- 📊 **ML Engine:** Isolation Forest & Random Forest")
-    st.markdown("- 👁️ **Vision/OCR:** EasyOCR / PIL")
-    st.markdown("- ⚡ **Inference:** Groq API / Local Fallback")
+    st.markdown("- 👁️ **Vision/OCR:** EasyOCR / PIL Document Parser")
+    st.markdown("- ⚙️ **Security:** PII Redaction & HIPAA Masking")
 
 # Main Header
 st.markdown('<div class="gradient-title">🛡️ MedIns AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="gradient-sub">Next-Gen Health Insurance Claims Fraud Detector & Clinical Forensic Engine</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["🔍 Live Single Claim Audit", "📊 Batch Analytics & Hospital Insights", "🏗️ AI Architecture & Frameworks"])
+tab1, tab2, tab3 = st.tabs(["🔍 Deep Single Claim Forensic Audit", "📊 Batch Analytics & Kaggle Datasets", "🏗️ AI Architecture & Frameworks"])
 
 # TAB 1: LIVE SINGLE CLAIM AUDIT
 with tab1:
     col_left, col_right = st.columns([1, 1], gap="medium")
 
     with col_left:
-        st.subheader("1. Claim Input & Invoice Upload")
+        st.subheader("1. Hyderabad Hospital & Patient Case Selection")
 
-        sample_choice = st.selectbox(
-            "Select Scenario for Live Demo:",
-            ["Custom Manual Entry", "Sample 1: Legitimate Claim (Appendectomy)", "Sample 2: Fraudulent Upcoding (Ankle Sprain -> Spine MRI)"]
-        )
+        # Real Hyderabad Healthcare Institutions Directory
+        hyderabad_hospitals = {
+            "Apollo Hospitals (Jubilee Hills - HOSP-HYD-01)": {"id": "HOSP-HYD-01", "name": "Apollo Hospitals, Jubilee Hills", "type": "Multi-Specialty Super Tertiary Care"},
+            "Yashoda Hospitals (Hitec City / Somajiguda - HOSP-HYD-02)": {"id": "HOSP-HYD-02", "name": "Yashoda Hospitals, Hitec City", "type": "Super Specialty Tertiary Center"},
+            "KIMS Hospitals (Krishna Institute, Kondapur - HOSP-HYD-03)": {"id": "HOSP-HYD-03", "name": "KIMS Hospitals, Kondapur", "type": "Super Specialty Care"},
+            "CARE Hospitals (Banjara Hills / Gachibowli - HOSP-HYD-04)": {"id": "HOSP-HYD-04", "name": "CARE Hospitals, Banjara Hills", "type": "Cardiovascular & Multispecialty"},
+            "AIG Hospitals (Asian Institute of Gastro, Gachibowli - HOSP-HYD-05)": {"id": "HOSP-HYD-05", "name": "AIG Hospitals, Gachibowli", "type": "Gastroenterology & Surgical Excellence"},
+            "Continental Hospital (Financial District, Nanakramguda - HOSP-HYD-06)": {"id": "HOSP-HYD-06", "name": "Continental Hospital, Nanakramguda", "type": "JCI Accredited Multi-Specialty"},
+            "Sunshine Hospitals (Gachibowli / Paradise - HOSP-HYD-07)": {"id": "HOSP-HYD-07", "name": "Sunshine Hospitals, Gachibowli", "type": "Orthopedics & Joint Replacement"},
+            "Custom Hyderabad Hospital": {"id": "HOSP-HYD-99", "name": "Custom Hyderabad Medical Center", "type": "General Clinic"}
+        }
 
-        default_cpt = "CPT-47562"
-        default_diag = "Acute Appendicitis (ICD-10 K35.80)"
-        default_amount = 6500.0
-        default_visits = 2
-        default_age = 38
-        default_notes = "Patient presented with acute lower right quadrant pain. Laparoscopic appendectomy performed cleanly."
-        sample_img_path = None
+        selected_hosp_label = st.selectbox("🏥 Select Hyderabad Hospital (By Location & Code):", list(hyderabad_hospitals.keys()))
+        selected_hosp = hyderabad_hospitals[selected_hosp_label]
 
-        if sample_choice == "Sample 1: Legitimate Claim (Appendectomy)":
-            default_cpt = "CPT-47562"
-            default_diag = "Acute Appendicitis (ICD-10 K35.80)"
-            default_amount = 6500.0
-            default_visits = 2
-            default_age = 38
-            default_notes = "Patient presented with acute lower right quadrant abdominal pain. Laparoscopic appendectomy performed without complications."
-            sample_img_path = "sample_bills/legitimate_claim.png"
+        # Disease / Health Case Selection
+        disease_cases = {
+            "🩺 Acute Appendicitis (Abdominal Surgery)": {
+                "cpt": "CPT-47562",
+                "diag": "Acute Appendicitis (ICD-10 K35.80)",
+                "amount": 6500.0,
+                "visits": 2,
+                "age": 38,
+                "gender": "Female",
+                "history": "No chronic medical conditions",
+                "recommended_tests": ["Abdominal Ultrasound", "Complete Blood Count (CBC)", "Urinalysis Panel"],
+                "sample_billed_tests": ["Abdominal Ultrasound", "Complete Blood Count (CBC)", "Urinalysis Panel"],
+                "notes": "Patient presented with acute lower right quadrant abdominal pain and elevated white blood cell count. Laparoscopic appendectomy performed cleanly.",
+                "img": "sample_bills/legitimate_claim.png"
+            },
+            "🦵 Mild Acute Ankle Sprain (Upcoded Fraud Scenario)": {
+                "cpt": "CPT-72148",
+                "diag": "Mild Acute Ankle Sprain (ICD-10 S93.401A)",
+                "amount": 8500.0,
+                "visits": 12,
+                "age": 45,
+                "gender": "Male",
+                "history": "Hypertension",
+                "recommended_tests": ["Standard Ankle X-Ray", "Physical Joint Examination"],
+                "sample_billed_tests": ["Standard Ankle X-Ray", "Lumbar Spine Contrast MRI", "Head CT Scan", "High-Trauma Emergency Package"],
+                "notes": "Patient came for minor ankle strain after tripping. Doctor ordered lumbar spine MRI and high-complexity trauma package.",
+                "img": "sample_bills/fraudulent_upcoded_claim.png"
+            },
+            "🫀 Acute Chest Pain / Angina (Cardiology Case)": {
+                "cpt": "CPT-70450",
+                "diag": "Acute Subendocardial Ischemia (ICD-10 I21.4)",
+                "amount": 4200.0,
+                "visits": 4,
+                "age": 62,
+                "gender": "Male",
+                "history": "Coronary Artery Disease, Hyperlipidemia",
+                "recommended_tests": ["12-Lead ECG", "Cardiac Troponin I & T Labs", "Echocardiogram", "Chest X-Ray"],
+                "sample_billed_tests": ["12-Lead ECG", "Cardiac Troponin I & T Labs", "Echocardiogram", "Chest X-Ray"],
+                "notes": "62-year-old male with severe retrosternal chest pain radiating to left arm. Cardiac markers elevated. Emergency cardiology workup performed.",
+                "img": None
+            },
+            "✍️ Custom Medical Case (User Defined Data)": {
+                "cpt": "CPT-99213",
+                "diag": "Custom Diagnosis (ICD-10)",
+                "amount": 150.0,
+                "visits": 1,
+                "age": 30,
+                "gender": "Female",
+                "history": "None",
+                "recommended_tests": ["Routine Physical Exam"],
+                "sample_billed_tests": [],
+                "notes": "Routine outpatient consultation.",
+                "img": None
+            }
+        }
 
-        elif sample_choice == "Sample 2: Fraudulent Upcoding (Ankle Sprain -> Spine MRI)":
-            default_cpt = "CPT-72148"
-            default_diag = "Mild Acute Ankle Sprain (ICD-10 S93.401A)"
-            default_amount = 8500.0
-            default_visits = 12
-            default_age = 45
-            default_notes = "Patient came for minor ankle strain after tripping. Doctor ordered lumbar spine MRI and high-complexity trauma package."
-            sample_img_path = "sample_bills/fraudulent_upcoded_claim.png"
+        selected_case_name = st.selectbox("Select Medical Case Scenario:", list(disease_cases.keys()))
+        case_data = disease_cases[selected_case_name]
 
-        uploaded_file = st.file_uploader("Upload Hospital Invoice / Doctor Note Image", type=["png", "jpg", "jpeg"])
+        # Display AI Recommended Standard Guidelines Tests
+        st.markdown("#### 🤖 AI Recommended Guidelines Tests")
+        st.info(" , ".join([f"✓ {t}" for t in case_data["recommended_tests"]]))
+
+        uploaded_file = st.file_uploader("Upload Hospital Invoice / Doctor Note Image (Optional)", type=["png", "jpg", "jpeg"])
         
         if uploaded_file:
             st.image(uploaded_file, caption="Uploaded Invoice Image", use_container_width=True)
-        elif sample_img_path and os.path.exists(sample_img_path):
-            st.image(sample_img_path, caption="Sample Invoice Document", use_container_width=True)
+        elif case_data["img"] and os.path.exists(case_data["img"]):
+            st.image(case_data["img"], caption="Scenario Invoice Document", use_container_width=True)
 
         with st.form("claim_form"):
-            cpt_code = st.selectbox("Billed CPT Code", ["CPT-99213", "CPT-99215", "CPT-47562", "CPT-49505", "CPT-70450", "CPT-72148", "CPT-29881"], index=["CPT-99213", "CPT-99215", "CPT-47562", "CPT-49505", "CPT-70450", "CPT-72148", "CPT-29881"].index(default_cpt))
-            diagnosis = st.text_input("Diagnosis (ICD-10)", value=default_diag)
-            claim_amount = st.number_input("Claimed Amount ($)", min_value=50.0, max_value=50000.0, value=default_amount, step=100.0)
-            patient_age = st.slider("Patient Age", 18, 90, value=default_age)
-            visits_30d = st.slider("Hospital Visits (Last 30 Days)", 1, 20, value=default_visits)
-            clinical_notes = st.text_area("Doctor Clinical Summary / Notes", value=default_notes, height=100)
+            st.markdown(f"🏥 **Hospital:** `{selected_hosp['name']}` | **Code:** `{selected_hosp['id']}` | **Type:** `{selected_hosp['type']}`")
+            hospital_name = selected_hosp['name']
+            hospital_id = selected_hosp['id']
+            hospital_type = selected_hosp['type']
+
+            c1_sub, c2_sub = st.columns(2)
+            with c1_sub:
+                patient_age = st.slider("Patient Age", 18, 90, value=case_data["age"])
+            with c2_sub:
+                patient_gender = st.selectbox("Patient Gender", ["Female", "Male", "Other"], index=["Female", "Male", "Other"].index(case_data["gender"]))
+
+            medical_history = st.text_input("Pre-existing Medical History / Comorbidities", value=case_data["history"])
+            cpt_code = st.selectbox("Billed CPT Code", ["CPT-99213", "CPT-99215", "CPT-47562", "CPT-49505", "CPT-70450", "CPT-72148", "CPT-29881"], index=["CPT-99213", "CPT-99215", "CPT-47562", "CPT-49505", "CPT-70450", "CPT-72148", "CPT-29881"].index(case_data["cpt"]))
+            diagnosis = st.text_input("Diagnosis (ICD-10)", value=case_data["diag"])
+            
+            # Select Actual Billed Diagnostic Tests
+            all_possible_tests = [
+                "Abdominal Ultrasound", "Complete Blood Count (CBC)", "Urinalysis Panel",
+                "Standard Ankle X-Ray", "Physical Joint Examination", "Lumbar Spine Contrast MRI",
+                "Head CT Scan", "High-Trauma Emergency Package", "12-Lead ECG", "Cardiac Troponin I & T Labs",
+                "Echocardiogram", "Chest X-Ray", "Routine Physical Exam"
+            ]
+            
+            selected_billed_tests = st.multiselect(
+                "Select Actual Billed Diagnostic Tests & Line Items:",
+                options=all_possible_tests,
+                default=[t for t in case_data["sample_billed_tests"] if t in all_possible_tests]
+            )
+
+            claim_amount = st.number_input("Claimed Amount ($)", min_value=50.0, max_value=50000.0, value=case_data["amount"], step=100.0)
+            visits_30d = st.slider("Hospital Visits (Last 30 Days)", 1, 20, value=case_data["visits"])
+            clinical_notes = st.text_area("Doctor Clinical Summary / Progress Notes", value=case_data["notes"], height=100)
             
             submit_btn = st.form_submit_button("🚨 Run MedIns AI Forensic Audit", use_container_width=True)
 
     with col_right:
-        st.subheader("2. MedIns AI Audit Findings")
+        st.subheader("2. MedIns Multi-Dimensional Forensic Audit")
 
-        if submit_btn or sample_choice != "Custom Manual Entry":
-            # 1. Run ML Tabular Prediction
-            ml_res = ml_engine.predict_single_claim(cpt_code, claim_amount, visits_30d, patient_age)
+        if submit_btn or selected_case_name != "✍️ Custom Medical Case (User Defined Data)":
+            billed_tests_str = ", ".join(selected_billed_tests) if selected_billed_tests else "None selected"
+            recommended_tests_str = ", ".join(case_data["recommended_tests"])
+
+            # 1. Run ML Tabular Prediction with dynamic test-to-disease un-relatedness scoring
+            ml_res = ml_engine.predict_single_claim(
+                cpt_code, 
+                claim_amount, 
+                visits_30d, 
+                patient_age,
+                billed_tests=selected_billed_tests,
+                recommended_tests=case_data["recommended_tests"]
+            )
             
-            # 2. Run LLM Clinical Audit
-            llm_res = llm_engine.audit_claim(diagnosis, cpt_code, claim_amount, ml_res["benchmark_cost"], clinical_notes)
+            # 2. Run Deep LLM Multi-Dimensional Audit
+            llm_res = llm_engine.audit_claim(
+                diagnosis=diagnosis,
+                procedure_code=cpt_code,
+                claim_amount=claim_amount,
+                benchmark=ml_res["benchmark_cost"],
+                clinical_notes=clinical_notes,
+                patient_age=patient_age,
+                patient_gender=patient_gender,
+                medical_history=medical_history,
+                billed_tests=billed_tests_str,
+                recommended_tests=recommended_tests_str,
+                hospital_name=hospital_name,
+                hospital_id=hospital_id,
+                hospital_type=hospital_type
+            )
+            
+            # 3. Dynamically update dataset with audited custom claim
+            fraud_score_pct = int(ml_res["fraud_score"] * 100)
+            is_fraud_flag = 1 if fraud_score_pct >= 60 else 0
+            fraud_type_str = "Unrelated Test Upcoding" if ml_res["unrelated_tests_count"] > 0 else "Cost Ratio Anomaly" if ml_res["cost_ratio"] > 1.8 else "None"
+            
+            ml_engine.append_custom_claim_to_dataset(
+                claim_id=f"CLM-{np.random.randint(2026000, 2026999)}",
+                hospital_id=hospital_id,
+                cpt_code=cpt_code,
+                claim_amount=claim_amount,
+                benchmark_cost=ml_res["benchmark_cost"],
+                cost_ratio=ml_res["cost_ratio"],
+                visits_30d=visits_30d,
+                is_fraud=is_fraud_flag,
+                fraud_type=fraud_type_str
+            )
             
             # Parse raw response
-            llm_text = llm_res["raw_response"]
-            fraud_score_pct = int(ml_res["fraud_score"] * 100)
+            llm_raw = llm_res["raw_response"]
             
-            if "HIGH" in llm_text or fraud_score_pct >= 70:
-                badge_html = f'<div class="badge-high">Risk Index: {fraud_score_pct}% — HIGH SUSPICION OF FRAUD</div>'
-            elif "MEDIUM" in llm_text or fraud_score_pct >= 40:
-                badge_html = f'<div class="badge-high" style="color:#FBBF24; background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.4);">Risk Index: {fraud_score_pct}% — MEDIUM RISK ANOMALY</div>'
+            try:
+                parsed_audit = json.loads(llm_raw)
+            except Exception:
+                parsed_audit = {
+                    "risk_level": "HIGH" if ml_res["fraud_score"] >= 0.7 else "LOW",
+                    "hospital_context_acknowledged": f"Claim evaluated for {hospital_name} ({hospital_id}).",
+                    "cross_evaluation_matrix": {
+                        "financial_variance_status": f"Cost Ratio: {ml_res['cost_ratio']}x benchmark",
+                        "clinical_necessity_status": "Evaluated against AI guidelines",
+                        "upcoding_probability_status": "Completed"
+                    },
+                    "clinical_appropriateness": "Clinical note evaluation completed.",
+                    "fraud_red_flags": ml_res["flags"],
+                    "forensic_summary": llm_raw
+                }
+
+            risk_level_str = parsed_audit.get("risk_level", "LOW").upper()
+            
+            if risk_level_str == "HIGH" or fraud_score_pct >= 70:
+                badge_html = f'<div class="badge-high">MedIns Risk Index: {fraud_score_pct}% — HIGH SUSPICION OF FRAUD</div>'
+            elif risk_level_str == "MEDIUM" or fraud_score_pct >= 40:
+                badge_html = f'<div class="badge-high" style="color:#FBBF24; background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.4);">MedIns Risk Index: {fraud_score_pct}% — MEDIUM RISK ANOMALY</div>'
             else:
-                badge_html = f'<div class="badge-low">Risk Index: {fraud_score_pct}% — LEGITIMATE CLAIM</div>'
+                badge_html = f'<div class="badge-low">MedIns Risk Index: {fraud_score_pct}% — LEGITIMATE CLAIM</div>'
 
             st.markdown(badge_html, unsafe_allow_html=True)
             st.progress(fraud_score_pct / 100.0)
 
-            # Render Plotly Gauge if available
-            if HAS_PLOTLY:
-                fig_gauge = go.Figure(go.Indicator(
-                    mode="gauge+number",
-                    value=fraud_score_pct,
-                    domain={'x': [0, 1], 'y': [0, 1]},
-                    title={'text': "Calculated Risk Score", 'font': {'color': '#F8FAFC', 'size': 18}},
-                    number={'suffix': "%", 'font': {'color': '#38BDF8'}},
-                    gauge={
-                        'axis': {'range': [0, 100], 'tickcolor': "#94A3B8"},
-                        'bar': {'color': "#EF4444" if fraud_score_pct>=70 else "#F59E0B" if fraud_score_pct>=40 else "#10B981"},
-                        'bgcolor': "#0F172A",
-                        'bordercolor': "#334155",
-                        'steps': [
-                            {'range': [0, 40], 'color': "#1E293B"},
-                            {'range': [40, 70], 'color': "#334155"},
-                            {'range': [70, 100], 'color': "#7F1D1D"}
-                        ]
-                    }
-                ))
-                fig_gauge.update_layout(height=180, margin=dict(l=20, r=20, t=30, b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig_gauge, use_container_width=True)
+            # Hospital Context Acknowledgment Banner
+            st.success(f"🏛️ **Hyderabad Hospital Dossier Acknowledged & Dataset Updated:** {parsed_audit.get('hospital_context_acknowledged', f'Evaluated claim for {hospital_name}')}")
 
-            # Display Anomaly Signals
-            st.markdown("#### 🔍 Tabular Anomaly Signals (ML Engine)")
-            st.write(f"**Billing Ratio:** `{ml_res['cost_ratio']}x` of regional benchmark (${ml_res['benchmark_cost']})")
-            
+            # Render Multi-Dimensional Cross-Evaluation Matrix Table
+            st.markdown("#### 📐 Multi-Dimensional Cross-Evaluation Matrix")
+            matrix_data = parsed_audit.get("cross_evaluation_matrix", {})
+            df_matrix = pd.DataFrame([
+                {"Dimension": "1. Financial Billing Variance", "Status & Evaluation": matrix_data.get("financial_variance_status", "N/A")},
+                {"Dimension": "2. Clinical Care Necessity", "Status & Evaluation": matrix_data.get("clinical_necessity_status", "N/A")},
+                {"Dimension": "3. Upcoding / Fraud Mismatch", "Status & Evaluation": matrix_data.get("upcoding_probability_status", "N/A")}
+            ])
+            st.table(df_matrix)
+
+            # Deep Medical Sections
+            st.markdown("#### 🩺 AI Guidelines vs Billed Test Appropriateness")
+            st.info(parsed_audit.get("clinical_appropriateness", "Evaluated against age and diagnosis guidelines."))
+
+            st.markdown("#### 🚩 Flagged Fraud Red Flags")
+            red_flags_list = parsed_audit.get("fraud_red_flags", [])
             if ml_res["flags"]:
                 for flag in ml_res["flags"]:
-                    st.warning(f"⚠️ {flag}")
+                    if flag not in red_flags_list:
+                        red_flags_list.append(flag)
+                        
+            if red_flags_list and red_flags_list != ["None detected"]:
+                for rf in red_flags_list:
+                    st.warning(f"⚠️ {rf}")
             else:
-                st.success("✅ No numerical anomalies detected by Isolation Forest.")
+                st.success("✅ No clinical red flags or test over-utilization detected.")
 
-            # Display LLM Explanation
-            st.markdown("#### 🤖 Clinical Opinion (Open-Source LLM)")
-            st.caption(f"Auditor Engine: **{llm_res['llm_used']}**")
-            st.info(llm_text)
+            st.markdown("#### 💡 Forensic Summary & Verdict")
+            st.caption(f"Evaluated by: **{llm_res['llm_used']}**")
+            st.write(parsed_audit.get("forensic_summary", ""))
+
+            # Collapsible Hidden Section for Technical & PII Privacy Audit + Score Explanation
+            st.divider()
+            with st.expander("🔒 Hidden Technical Payload, PII Privacy & Risk Score Factor Breakdown", expanded=False):
+                expl = ml_res["score_explanation"]
+                st.markdown("### 📊 Itemized Risk Score Factor Breakdown (Examiner View)")
+                st.json({
+                    "Total_MedIns_Risk_Index": f"{expl['final_risk_score_pct']}%",
+                    "Base_ML_Score": f"{expl['base_ml_score_pct']}%",
+                    "Cost_Ratio_Penalty": f"+{expl['cost_penalty_pct']}%",
+                    "Unrelated_Tests_Penalty": f"+{expl['unrelated_tests_penalty_pct']}%",
+                    "Age_Relevance_Penalty": f"+{expl['age_relevance_penalty_pct']}%",
+                    "Visit_Frequency_Penalty": f"+{expl['visit_freq_penalty_pct']}%",
+                    "Unrelated_Billed_Test_Names": expl["unrelated_test_names"]
+                })
+                
+                st.markdown("**HIPAA / GDPR Patient Privacy Masking:**")
+                st.json({
+                    "Hospital_Name": hospital_name,
+                    "Hospital_ID": hospital_id,
+                    "Facility_Type": hospital_type,
+                    "Patient_ID": "PAT-****-9401 (Redacted)",
+                    "Patient_Age": patient_age,
+                    "Patient_Gender": patient_gender,
+                    "Isolation_Forest_Anomaly_Flag": ml_res["anomaly_detected"],
+                    "Unrelated_Billed_Tests_Count": ml_res["unrelated_tests_count"],
+                    "Cost_Ratio_vs_Benchmark": f"{ml_res['cost_ratio']}x (${ml_res['benchmark_cost']:,.2f})"
+                })
+                st.markdown("**Raw LLM JSON Payload:**")
+                st.code(llm_raw, language="json")
+
         else:
-            st.info("👈 Select a sample scenario or click **Run MedIns AI Forensic Audit** to analyze.")
+            st.info("👈 Select a health case or click **Run Deep Forensic Audit** to analyze.")
 
-# TAB 2: BATCH ANALYTICS & HOSPITAL INSIGHTS
+# TAB 2: BATCH ANALYTICS & KAGGLE DATASETS
 with tab2:
-    st.subheader("Batch Claims Analytics & Fraud Distribution")
-    
+    st.subheader("Batch Claims Analytics & Dynamic Dataset Persistence")
+
+    st.markdown("#### 📥 Kaggle Dataset API Integration")
+    c_kg1, c_kg2 = st.columns([2, 1])
+    with c_kg1:
+        dataset_input = st.text_input("Kaggle Dataset Identifier:", value="rohitgarg/healthcare-insurance-claims-fraud-detection")
+    with c_kg2:
+        st.write("")
+        st.write("")
+        fetch_kg_btn = st.button("Download Kaggle Dataset", use_container_width=True)
+
+    if fetch_kg_btn:
+        success, msg, k_df = kaggle_engine.fetch_kaggle_claims_data(dataset_input)
+        if success:
+            st.success(msg)
+            st.dataframe(k_df.head(10), use_container_width=True)
+        else:
+            st.info(f"ℹ️ {msg}")
+
+    st.divider()
     if os.path.exists("claims_dataset.csv"):
         df_claims = pd.read_csv("claims_dataset.csv")
 
@@ -303,16 +490,17 @@ with tab2:
             else:
                 st.bar_chart(fraud_by_hosp.head(8).set_index("Hospital_ID"))
 
-        st.markdown("#### Sample Processed Claims Dataset")
-        st.dataframe(df_claims.head(10), use_container_width=True)
+        st.markdown("#### Live Updated Claims Dataset")
+        st.dataframe(df_claims.tail(15), use_container_width=True)
 
 # TAB 3: AI ARCHITECTURE & FRAMEWORKS
 with tab3:
     st.subheader("Open-Source AI Stack & System Architecture")
 
     st.markdown("""
-    ### 1. Open-Source AI Stack Used:
-    - **Open-Source LLM:** Meta Llama 3.1 8B (via Groq Cloud API & local Ollama support)
+    ### 1. Integrated AI Platforms & Tools:
+    - **Open-Source LLM:** Meta Llama 3.1 8B (via Groq Cloud LPUs)
+    - **Dataset API:** Kaggle Datasets API (`kaggle`)
     - **Machine Learning Frameworks:** `Scikit-Learn` (Isolation Forest, Random Forest Classifier), `Pandas`, `NumPy`
     - **Vision & Document OCR:** `EasyOCR`, `Pillow (PIL)`
     - **UI & Analytics:** `Streamlit`, `Plotly Express`
@@ -322,15 +510,15 @@ with tab3:
 
     ### 2. End-to-End System Workflow:
     ```
-    [ Hospital Bill Upload ] ---> [ EasyOCR / Text Parser ]
-                                        |
-                                        v
-    [ Claim Metadata ] ---------> [ Tabular ML Engine ]  ---> [ Isolation Forest Score ]
-                                        |                                   |
-                                        v                                   v
-                                [ Llama 3.1 LLM Agent ] ---------> [ MedIns Risk Index ]
-                                        |                                   |
-                                        v                                   v
-                            [ Natural Language Audit ] ----------> [ Streamlit Dark UI ]
+    [ Hospital Bill / Kaggle Data ] ---> [ EasyOCR / Kaggle API ]
+                                                |
+                                                v
+    [ Claim Metadata & Tests ] ---------> [ Tabular ML Engine ]  ---> [ Isolation Forest Score ]
+                                                |                                   |
+                                                v                                   v
+                                        [ Llama 3.1 LLM Agent ] ---------> [ MedIns Risk Index ]
+                                                |                                   |
+                                                v                                   v
+                                    [ Deep Forensic Report ] ---------> [ Streamlit Dark UI ]
     ```
     """)

@@ -37,7 +37,7 @@ class TabularFraudDetector:
 
         if HAS_SKLEARN:
             df = pd.read_csv(self.data_path)
-            features = ["Claim_Amount", "Benchmark_Cost", "Cost_Ratio", "Visits_Last_30Days", "Patient_Age"]
+            features = ["Cost_Ratio", "Visits_Last_30Days", "Patient_Age"]
             X = df[features]
             y = df["Is_Fraud"]
 
@@ -47,7 +47,37 @@ class TabularFraudDetector:
         
         self.is_trained = True
 
-    def predict_single_claim(self, cpt_code, claim_amount, visits_30d, age):
+    def append_custom_claim_to_dataset(self, claim_id, hospital_id, cpt_code, claim_amount, benchmark_cost, cost_ratio, visits_30d, is_fraud, fraud_type):
+        try:
+            if os.path.exists(self.data_path):
+                df = pd.read_csv(self.data_path)
+            else:
+                df = pd.DataFrame()
+
+            new_row = {
+                "Claim_ID": claim_id,
+                "Patient_ID": f"PAT-{np.random.randint(10000, 99999)}",
+                "Patient_Age": np.random.randint(25, 75),
+                "Hospital_ID": hospital_id,
+                "CPT_Code": cpt_code,
+                "Procedure_Name": cpt_code,
+                "Claim_Amount": claim_amount,
+                "Benchmark_Cost": benchmark_cost,
+                "Cost_Ratio": cost_ratio,
+                "Visits_Last_30Days": visits_30d,
+                "Is_Fraud": is_fraud,
+                "Fraud_Type": fraud_type
+            }
+
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+            df.to_csv(self.data_path, index=False)
+            self.train_or_load()
+            return True
+        except Exception as e:
+            print(f"Error appending custom claim to dataset: {e}")
+            return False
+
+    def predict_single_claim(self, cpt_code, claim_amount, visits_30d, age, billed_tests=None, recommended_tests=None, **kwargs):
         if not self.is_trained:
             self.train_or_load()
 
@@ -55,15 +85,48 @@ class TabularFraudDetector:
         cost_ratio = round(claim_amount / benchmark, 2)
 
         flags = []
-        if cost_ratio > 2.0:
-            flags.append(f"Billing amount is {cost_ratio}x higher than regional benchmark (${benchmark}).")
+        unrelated_count = 0
+        unrelated_test_names = []
+        
+        # Determine if billed tests are genuinely present
+        has_tests = False
+        if billed_tests and isinstance(billed_tests, list) and len(billed_tests) > 0:
+            valid_b_tests = [t for t in billed_tests if isinstance(t, str) and t.strip().lower() not in ["none", "none selected", "n/a", "choose options", "[]"]]
+            if len(valid_b_tests) > 0:
+                has_tests = True
+                b_list = [t.strip().lower() for t in valid_b_tests]
+                r_list = [t.strip().lower() for t in (recommended_tests or []) if isinstance(t, str)]
+                
+                for b_test in b_list:
+                    is_related = False
+                    for r_test in r_list:
+                        if b_test in r_test or r_test in b_test:
+                            is_related = True
+                            break
+                    
+                    if not is_related:
+                        unrelated_count += 1
+                        unrelated_test_names.append(b_test.title())
+                        flags.append(f"Unrelated Diagnostic Test: '{b_test.title()}' is not clinically indicated for this diagnosis.")
+
+        if cost_ratio > 1.8:
+            flags.append(f"Billing Ratio Anomaly: Billed amount (${claim_amount:,.2f}) exceeds regional benchmark (${benchmark:,.2f}) by {cost_ratio:.2f}x.")
         if visits_30d > 7:
-            flags.append(f"Unusually high visit frequency ({visits_30d} visits in 30 days).")
+            flags.append(f"High Frequency Anomaly: Unusually high visit count ({visits_30d} visits in 30 days).")
+
+        # Age Relevance Factor
+        age_penalty = 0.0
+        if age < 18 and "cpt-70450" in cpt_code.lower():
+            age_penalty = 0.10
+            flags.append("Pediatric Radiation Caution: CT scan ordered for pediatric patient requires special justification.")
+
+        # Score Breakdown components
+        cost_penalty = max(0.0, round((cost_ratio - 1.0) * 0.15, 2)) if cost_ratio > 1.5 else 0.0
+        test_penalty = min(0.65, round(unrelated_count * 0.35, 2)) if has_tests else 0.0
+        freq_penalty = 0.15 if visits_30d > 7 else 0.0
 
         if HAS_SKLEARN:
             input_data = pd.DataFrame([{
-                "Claim_Amount": claim_amount,
-                "Benchmark_Cost": benchmark,
                 "Cost_Ratio": cost_ratio,
                 "Visits_Last_30Days": visits_30d,
                 "Patient_Age": age
@@ -71,32 +134,39 @@ class TabularFraudDetector:
 
             input_scaled = self.scaler.transform(input_data)
             anomaly_flag = self.iso_forest.predict(input_scaled)[0]
-            anomaly_raw_score = self.iso_forest.score_samples(input_scaled)[0]
-            normalized_anomaly = round(float(np.clip((0.5 - anomaly_raw_score) * 2, 0.0, 1.0)), 2)
             rf_prob = round(float(self.rf_classifier.predict_proba(input_scaled)[0][1]), 2)
-            final_fraud_score = round(max(normalized_anomaly, rf_prob), 2)
             
-            if anomaly_flag == -1:
-                flags.append("Statistical outlier detected by Isolation Forest algorithm.")
-            
-            is_anomaly = (anomaly_flag == -1)
+            base_score = rf_prob
+            if cost_ratio <= 1.2 and visits_30d <= 4 and unrelated_count == 0:
+                final_fraud_score = round(min(base_score, 0.10), 2)
+            else:
+                final_fraud_score = round(min(0.98, base_score + cost_penalty + test_penalty + freq_penalty + age_penalty), 2)
+
+            is_anomaly = (anomaly_flag == -1 or unrelated_count >= 1 or cost_ratio > 1.8)
         else:
-            # Pure Python statistical score fallback
-            score = 0.1
-            if cost_ratio > 1.8:
-                score += min(0.6, (cost_ratio - 1.0) * 0.3)
-            if visits_30d > 5:
-                score += min(0.3, (visits_30d - 5) * 0.05)
+            base_score = 0.10
+            final_fraud_score = round(min(0.98, base_score + cost_penalty + test_penalty + freq_penalty + age_penalty), 2)
+            is_anomaly = (cost_ratio > 1.8 or visits_30d > 7 or unrelated_count >= 1)
             
-            final_fraud_score = round(min(0.98, score), 2)
-            is_anomaly = cost_ratio > 2.0 or visits_30d > 7
-            if is_anomaly:
-                flags.append("Statistical outlier flagged by Z-score benchmark engine.")
+        if is_anomaly and "Statistical outlier flagged by ML anomaly engine." not in flags:
+            flags.append("Statistical outlier flagged by ML anomaly engine.")
+
+        score_explanation = {
+            "base_ml_score_pct": int(base_score * 100),
+            "cost_penalty_pct": int(cost_penalty * 100),
+            "unrelated_tests_penalty_pct": int(test_penalty * 100),
+            "age_relevance_penalty_pct": int(age_penalty * 100),
+            "visit_freq_penalty_pct": int(freq_penalty * 100),
+            "final_risk_score_pct": int(final_fraud_score * 100),
+            "unrelated_test_names": unrelated_test_names
+        }
 
         return {
             "fraud_score": final_fraud_score,
             "cost_ratio": cost_ratio,
             "benchmark_cost": benchmark,
             "flags": flags,
-            "anomaly_detected": is_anomaly
+            "unrelated_tests_count": unrelated_count,
+            "anomaly_detected": is_anomaly,
+            "score_explanation": score_explanation
         }
