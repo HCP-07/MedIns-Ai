@@ -10,14 +10,21 @@ import importlib
 import llm_auditor
 import fraud_engine
 import kaggle_fetcher
+import gemini_ocr_auditor
+import pdf_report_generator
+
 importlib.reload(llm_auditor)
 importlib.reload(fraud_engine)
 importlib.reload(kaggle_fetcher)
+importlib.reload(gemini_ocr_auditor)
+importlib.reload(pdf_report_generator)
 
 from llm_auditor import LLMClinicalAuditor
 from kaggle_fetcher import KaggleDatasetFetcher
 from fraud_engine import TabularFraudDetector
 from sample_generator import create_sample_bills
+from gemini_ocr_auditor import GeminiVisionOCRAuditor
+from pdf_report_generator import generate_fraud_report_pdf
 
 # Optional Plotly import with fallback
 try:
@@ -63,6 +70,16 @@ st.markdown("""
     }
 
     /* Result Badges */
+    .badge-severe {
+        background: rgba(225, 29, 72, 0.2);
+        color: #FF6B81;
+        border: 1.5px solid rgba(225, 29, 72, 0.5);
+        padding: 14px 22px;
+        border-radius: 12px;
+        font-weight: 800;
+        font-size: 1.35rem;
+        margin-bottom: 15px;
+    }
     .badge-high {
         background: rgba(239, 68, 68, 0.15);
         color: #FCA5A5;
@@ -85,7 +102,7 @@ st.markdown("""
     }
 
     /* Form Submit Button Styling */
-    div[data-testid="stFormSubmitButton"] > button {
+    div[data-testid="stFormSubmitButton"] > button, .stButton > button {
         background: linear-gradient(90deg, #2563EB 0%, #4F46E5 100%) !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
@@ -108,8 +125,9 @@ def load_ml_engine():
 ml_engine = load_ml_engine()
 llm_engine = LLMClinicalAuditor()
 kaggle_engine = KaggleDatasetFetcher()
+ocr_auditor = GeminiVisionOCRAuditor()
 
-# Clean Enterprise Sidebar
+# Clean Enterprise Sidebar with Gemini Vision Key Configuration
 with st.sidebar:
     st.markdown("""
     <div style="text-align: center; padding: 10px 0;">
@@ -120,30 +138,41 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.divider()
 
-    st.subheader("⚡ Backend Engine Status")
+    st.subheader("🤖 Groq LPU Fraud Intelligence API")
+    st.success("⚡ Groq API Active (Meta Llama 3.3 70B & Llama 3.1 8B)")
     
-    if llm_engine.client:
-        st.success("✅ Meta Llama 3.1 8B Active (Groq LPU)")
-    else:
-        st.info("ℹ️ Llama 3.1 Simulation Engine Active")
+    gemini_key_input = st.text_input("Google Gemini API Key (Optional)", value=os.environ.get("GEMINI_API_KEY", ""), type="password", help="Enter free key from aistudio.google.com for Google Gemini 1.5 Flash Vision LLM.")
+    if gemini_key_input:
+        os.environ["GEMINI_API_KEY"] = gemini_key_input
+        ocr_auditor = GeminiVisionOCRAuditor()
+        st.success("✅ Connected to Google Gemini Vision LLM")
 
+    st.divider()
     if kaggle_engine.kaggle_username:
-        st.success("✅ Kaggle API (kaggle.json) Loaded")
+        st.success(f"✅ Kaggle API Active ({kaggle_engine.kaggle_username})")
     else:
         st.caption("📊 Local Baseline Claims Dataset Active")
 
     st.divider()
-    st.markdown("**Integrated Core Stack:**")
-    st.markdown("- 🧠 **LLM Reasoner:** Meta Llama 3.1 8B")
-    st.markdown("- 📊 **ML Engine:** Isolation Forest & Random Forest")
-    st.markdown("- 👁️ **Vision/OCR:** EasyOCR / PIL Document Parser")
-    st.markdown("- ⚙️ **Security:** PII Redaction & HIPAA Masking")
+    st.markdown("**API System Instruction:**")
+    st.markdown("`You are an expert AI Health Insurance Fraud Auditor and Data Extraction Specialist.`")
+    st.markdown("**Audit Reasoning Steps:**")
+    st.markdown("1. Demographics Audit (Age/Gender vs CPT)")
+    st.markdown("2. Diagnostic Audit (ICD-10 vs CPT)")
+    st.markdown("3. Billing Integrity (Duplicates/Unbundling)")
+    st.markdown("4. Provider Specialty Verification")
+    st.markdown("5. Fraud Risk Calculation (0-100)")
 
 # Main Header
 st.markdown('<div class="gradient-title">🛡️ MedIns AI</div>', unsafe_allow_html=True)
 st.markdown('<div class="gradient-sub">Next-Gen Health Insurance Claims Fraud Detector & Clinical Forensic Engine</div>', unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["🔍 Deep Single Claim Forensic Audit", "📊 Batch Analytics & Kaggle Datasets", "🏗️ AI Architecture & Frameworks"])
+tab1, tab2, tab3, tab4 = st.tabs([
+    "🔍 Deep Single Claim Forensic Audit", 
+    "📄 AI Health Insurance Fraud Auditor (API)", 
+    "📊 Batch Analytics & Kaggle Datasets", 
+    "🏗️ AI Architecture & Frameworks"
+])
 
 # TAB 1: LIVE SINGLE CLAIM AUDIT
 with tab1:
@@ -152,7 +181,6 @@ with tab1:
     with col_left:
         st.subheader("1. Hyderabad Hospital & Patient Case Selection")
 
-        # Real Hyderabad Healthcare Institutions Directory
         hyderabad_hospitals = {
             "Apollo Hospitals (Jubilee Hills - HOSP-HYD-01)": {"id": "HOSP-HYD-01", "name": "Apollo Hospitals, Jubilee Hills", "type": "Multi-Specialty Super Tertiary Care"},
             "Yashoda Hospitals (Hitec City / Somajiguda - HOSP-HYD-02)": {"id": "HOSP-HYD-02", "name": "Yashoda Hospitals, Hitec City", "type": "Super Specialty Tertiary Center"},
@@ -167,7 +195,6 @@ with tab1:
         selected_hosp_label = st.selectbox("🏥 Select Hyderabad Hospital (By Location & Code):", list(hyderabad_hospitals.keys()))
         selected_hosp = hyderabad_hospitals[selected_hosp_label]
 
-        # Disease / Health Case Selection
         disease_cases = {
             "🩺 Acute Appendicitis (Abdominal Surgery)": {
                 "cpt": "CPT-47562",
@@ -226,7 +253,6 @@ with tab1:
         selected_case_name = st.selectbox("Select Medical Case Scenario:", list(disease_cases.keys()))
         case_data = disease_cases[selected_case_name]
 
-        # Display AI Recommended Standard Guidelines Tests
         st.markdown("#### 🤖 AI Recommended Guidelines Tests")
         st.info(" , ".join([f"✓ {t}" for t in case_data["recommended_tests"]]))
 
@@ -253,7 +279,6 @@ with tab1:
             cpt_code = st.selectbox("Billed CPT Code", ["CPT-99213", "CPT-99215", "CPT-47562", "CPT-49505", "CPT-70450", "CPT-72148", "CPT-29881"], index=["CPT-99213", "CPT-99215", "CPT-47562", "CPT-49505", "CPT-70450", "CPT-72148", "CPT-29881"].index(case_data["cpt"]))
             diagnosis = st.text_input("Diagnosis (ICD-10)", value=case_data["diag"])
             
-            # Select Actual Billed Diagnostic Tests
             all_possible_tests = [
                 "Abdominal Ultrasound", "Complete Blood Count (CBC)", "Urinalysis Panel",
                 "Standard Ankle X-Ray", "Physical Joint Examination", "Lumbar Spine Contrast MRI",
@@ -280,7 +305,6 @@ with tab1:
             billed_tests_str = ", ".join(selected_billed_tests) if selected_billed_tests else "None selected"
             recommended_tests_str = ", ".join(case_data["recommended_tests"])
 
-            # 1. Run ML Tabular Prediction with dynamic test-to-disease un-relatedness scoring
             ml_res = ml_engine.predict_single_claim(
                 cpt_code, 
                 claim_amount, 
@@ -290,7 +314,6 @@ with tab1:
                 recommended_tests=case_data["recommended_tests"]
             )
             
-            # 2. Run Deep LLM Multi-Dimensional Audit
             llm_res = llm_engine.audit_claim(
                 diagnosis=diagnosis,
                 procedure_code=cpt_code,
@@ -307,7 +330,6 @@ with tab1:
                 hospital_type=hospital_type
             )
             
-            # 3. Dynamically update dataset with audited custom claim
             fraud_score_pct = int(ml_res["fraud_score"] * 100)
             is_fraud_flag = 1 if fraud_score_pct >= 60 else 0
             fraud_type_str = "Unrelated Test Upcoding" if ml_res["unrelated_tests_count"] > 0 else "Cost Ratio Anomaly" if ml_res["cost_ratio"] > 1.8 else "None"
@@ -324,7 +346,6 @@ with tab1:
                 fraud_type=fraud_type_str
             )
             
-            # Parse raw response
             llm_raw = llm_res["raw_response"]
             
             try:
@@ -355,10 +376,8 @@ with tab1:
             st.markdown(badge_html, unsafe_allow_html=True)
             st.progress(fraud_score_pct / 100.0)
 
-            # Hospital Context Acknowledgment Banner
             st.success(f"🏛️ **Hyderabad Hospital Dossier Acknowledged & Dataset Updated:** {parsed_audit.get('hospital_context_acknowledged', f'Evaluated claim for {hospital_name}')}")
 
-            # Render Multi-Dimensional Cross-Evaluation Matrix Table
             st.markdown("#### 📐 Multi-Dimensional Cross-Evaluation Matrix")
             matrix_data = parsed_audit.get("cross_evaluation_matrix", {})
             df_matrix = pd.DataFrame([
@@ -368,7 +387,6 @@ with tab1:
             ])
             st.table(df_matrix)
 
-            # Deep Medical Sections
             st.markdown("#### 🩺 AI Guidelines vs Billed Test Appropriateness")
             st.info(parsed_audit.get("clinical_appropriateness", "Evaluated against age and diagnosis guidelines."))
 
@@ -389,41 +407,195 @@ with tab1:
             st.caption(f"Evaluated by: **{llm_res['llm_used']}**")
             st.write(parsed_audit.get("forensic_summary", ""))
 
-            # Collapsible Hidden Section for Technical & PII Privacy Audit + Score Explanation
-            st.divider()
-            with st.expander("🔒 Hidden Technical Payload, PII Privacy & Risk Score Factor Breakdown", expanded=False):
-                expl = ml_res["score_explanation"]
-                st.markdown("### 📊 Itemized Risk Score Factor Breakdown (Examiner View)")
-                st.json({
-                    "Total_MedIns_Risk_Index": f"{expl['final_risk_score_pct']}%",
-                    "Base_ML_Score": f"{expl['base_ml_score_pct']}%",
-                    "Cost_Ratio_Penalty": f"+{expl['cost_penalty_pct']}%",
-                    "Unrelated_Tests_Penalty": f"+{expl['unrelated_tests_penalty_pct']}%",
-                    "Age_Relevance_Penalty": f"+{expl['age_relevance_penalty_pct']}%",
-                    "Visit_Frequency_Penalty": f"+{expl['visit_freq_penalty_pct']}%",
-                    "Unrelated_Billed_Test_Names": expl["unrelated_test_names"]
-                })
-                
-                st.markdown("**HIPAA / GDPR Patient Privacy Masking:**")
-                st.json({
-                    "Hospital_Name": hospital_name,
-                    "Hospital_ID": hospital_id,
-                    "Facility_Type": hospital_type,
-                    "Patient_ID": "PAT-****-9401 (Redacted)",
-                    "Patient_Age": patient_age,
-                    "Patient_Gender": patient_gender,
-                    "Isolation_Forest_Anomaly_Flag": ml_res["anomaly_detected"],
-                    "Unrelated_Billed_Tests_Count": ml_res["unrelated_tests_count"],
-                    "Cost_Ratio_vs_Benchmark": f"{ml_res['cost_ratio']}x (${ml_res['benchmark_cost']:,.2f})"
-                })
-                st.markdown("**Raw LLM JSON Payload:**")
-                st.code(llm_raw, language="json")
-
         else:
             st.info("👈 Select a health case or click **Run Deep Forensic Audit** to analyze.")
 
-# TAB 2: BATCH ANALYTICS & KAGGLE DATASETS
+# TAB 2: AI HEALTH INSURANCE FRAUD AUDITOR (EXACT RAW OCR .TXT & .DOCX SPECIFICATION)
 with tab2:
+    st.subheader("📄 AI Health Insurance Fraud Auditor (API)")
+    st.markdown("Upload or paste **raw OCR text files (.txt)** or **Word documents (.docx)** containing medical claim invoices. **Meta Llama 3.3 70B & Llama 3.1 8B via Groq LPUs** execute 100% dynamic clinical fraud audits (**Demographics Audit, Diagnostic Audit, Coding Violation Audit, Provider Specialty Verification, Fraud Risk Scoring**).")
+
+    c_ocr1, c_ocr2 = st.columns([1, 1], gap="medium")
+
+    with c_ocr1:
+        st.markdown("#### 1. Input Invoice Document or Raw Text")
+        
+        doc_input_option = st.radio("Choose Input Method:", ["📄 Upload Raw OCR Text (.txt) or Word Document (.docx)", "✍️ Paste Raw Medical Invoice Text"], horizontal=True)
+
+        active_file = None
+        pasted_text = ""
+
+        sample_valley_oak = """====================================================
+VALLEY OAK MEDICAL CENTER - INVOICE / CLAIM FORM
+====================================================
+Patient Name: Robert Jenkins
+DOB: 11/14/1957 (Age: 68)
+Gender: MALE
+Patient ID: VOMC-883920
+Date of Service: 10/12/2026
+Provider Name: Dr. Sarah Lin, MD (Orthopedics)
+
+Primary Diagnosis (ICD-10):
+M54.5 - Low Back Pain, unspecified
+
+SERVICES RENDERED:
+CODE     DESCRIPTION                              QTY    CHARGE
+------------------------------------------------------------------
+99214    Office Visit - Established, Mod-High     1      $ 175.00
+72148    MRI Lumbar Spine, without contrast       1      $ 950.00
+70551    MRI Brain, without contrast              1      $ 950.00
+81025    Urine Pregnancy Test (hCG)               1      $  45.00
+99381    Prev. Visit, Infant (under 1 year)       1      $ 120.00
+72148    MRI Lumbar Spine, without contrast       1      $ 950.00
+------------------------------------------------------------------
+TOTAL BILLED AMOUNT:                                     $ 3190.00
+====================================================
+Notes: Patient complained of acute lower back pain after lifting a heavy box. Recommended rest and prescribed painkillers. Routine screenings performed."""
+
+        sample_metropolitan = """METROPOLITAN GENERAL HOSPITAL
+100 Hospital Drive, Suite 200, Metropolis, NY 10001
+PATIENT STATEMENT & MEDICAL BILLING INVOICE
+
+Patient Name: JOHN DOE
+Patient ID: PT-99214 | Age: 42 | Gender: Male
+Date of Service: 10/12/2026
+
+DIAGNOSIS & VISIT SUMMARY:
+Diagnosis: Acute Emergency Department Evaluation - Level 3 (ICD-10 K35.80)
+Attending Physician: Dr. Marcus Vance, MD (Emergency Medicine)
+
+ITEMIZED BILLED CHARGES & PROCEDURES:
+1. CPT-99283: Emergency Department Visit Level 3 Moderate Complexity - $950.00
+2. CPT-73610: Radiologic Examination Ankle Complete 3 Views - $480.00
+3. CPT-73630: Radiologic Examination Foot Complete 3 Views - $520.00
+4. CPT-J1885: Ketorolac Tromethamine Injection 30mg - $145.00
+5. CPT-A4570: Ankle Splint / Rigid Immobilizer Brace - $450.00
+6. CPT-ED110: Aluminum Adult Crutches - $300.00
+
+TOTAL CLAIMED AMOUNT: $2,845.00
+Expected Regional Benchmark: $950.00
+Status: Pending Insurance Claim Audit"""
+
+        sample_city = """CITY GENERAL HOSPITAL
+500 Health Way, Regional Center
+PATIENT MEDICAL BILLING STATEMENT
+
+Patient Name: JANE SMITH
+Patient ID: PT-448102 | Age: 38 | Gender: Female
+Date of Service: 09/15/2026
+Provider Name: Dr. Alan Grant, MD (General Surgery)
+
+DIAGNOSIS: Acute Appendicitis (ICD-10 K35.80)
+PROCEDURE: Laparoscopic Appendectomy (CPT-47562)
+
+ITEMIZED CHARGES:
+1. Laparoscopic Appendectomy Procedure: $5,200.00
+2. Abdominal Ultrasound: $650.00
+3. Complete Blood Count (CBC) & Urinalysis: $350.00
+4. Anesthesia & Facility Operating Room Use: $300.00
+
+TOTAL CLAIMED AMOUNT: $6,500.00
+Regional Benchmark: $6,500.00"""
+
+        if "Upload" in doc_input_option:
+            ocr_file = st.file_uploader(
+                "Upload Raw OCR Document (.txt or .docx):", 
+                type=["txt", "docx", "doc"], 
+                key="text_doc_uploader"
+            )
+            if ocr_file:
+                st.success(f"✅ Loaded Document: **{ocr_file.name}** ({round(ocr_file.size / 1024, 1)} KB)")
+                active_file = ocr_file
+            else:
+                st.info("💡 Or select a sample raw text invoice below:")
+                sample_choice = st.selectbox("Sample Raw Text Invoices:", [
+                    "Valley Oak Medical Center (Critical Age/Gender Fraud & Duplicate MRI)",
+                    "Metropolitan General Hospital (Upcoded ER & Unbundled X-Ray)",
+                    "City General Hospital (Clean Laparoscopic Surgery Claim)"
+                ])
+                if "Valley Oak" in sample_choice:
+                    pasted_text = sample_valley_oak
+                elif "Metropolitan" in sample_choice:
+                    pasted_text = sample_metropolitan
+                else:
+                    pasted_text = sample_city
+                active_file = pasted_text
+        else:
+            pasted_text = st.text_area("Paste Medical Invoice / Hospital Bill Text Here:", height=320, value=sample_valley_oak)
+            active_file = pasted_text
+
+        run_ocr_btn = st.button("🚨 Audit Claim with Groq LPU API", use_container_width=True)
+
+    with c_ocr2:
+        st.markdown("#### 2. AI Audit Findings & Anomaly Detection")
+
+        if run_ocr_btn and active_file:
+            with st.spinner("Meta Llama 3.3 70B via Groq LPU API is dynamically evaluating Demographics, Diagnostic Necessity & Coding Violations..."):
+                audit_res = ocr_auditor.audit_invoice_image(active_file)
+
+            score = audit_res.get("fraud_risk_score", 0)
+            category = str(audit_res.get("risk_category", "High")).upper()
+            
+            # Badge rendering conforming to risk_category
+            if category == "SEVERE":
+                badge_html = f'<div class="badge-severe">Fraud Risk Score: {score}/100 — RISK CATEGORY: SEVERE</div>'
+            elif category == "HIGH":
+                badge_html = f'<div class="badge-high">Fraud Risk Score: {score}/100 — RISK CATEGORY: HIGH</div>'
+            elif category == "MEDIUM":
+                badge_html = f'<div class="badge-high" style="color:#FBBF24; background:rgba(245,158,11,0.15); border-color:rgba(245,158,11,0.4);">Fraud Risk Score: {score}/100 — RISK CATEGORY: MEDIUM</div>'
+            else:
+                badge_html = f'<div class="badge-low">Fraud Risk Score: {score}/100 — RISK CATEGORY: LOW</div>'
+                
+            st.markdown(badge_html, unsafe_allow_html=True)
+            st.progress(score / 100.0)
+            st.caption(f"Evaluated by: **{audit_res.get('llm_used', 'Groq LPU API')}**")
+
+            # PATIENT & PROVIDER DEMOGRAPHICS
+            p_info = audit_res.get("patient_info", {})
+            pr_info = audit_res.get("provider_info", {})
+            
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                st.markdown("**👤 Patient Demographics:**")
+                st.write(f"- **Name:** `{p_info.get('patient_name', 'N/A')}`")
+                st.write(f"- **ID:** `{p_info.get('patient_id', 'N/A')}`")
+                st.write(f"- **Age / Gender:** `{p_info.get('age', 'N/A')}` yo | `{p_info.get('gender', 'N/A')}`")
+            with col_p2:
+                st.markdown("**🩺 Provider Details:**")
+                st.write(f"- **Provider:** `{pr_info.get('provider_name', 'N/A')}`")
+                st.write(f"- **Specialty:** `{pr_info.get('specialty', 'N/A')}`")
+
+            # EXECUTIVE AI REASONING SUMMARY
+            st.markdown("#### 💡 Executive AI Reasoning Summary")
+            st.info(audit_res.get("ai_reasoning_summary", "Clinical audit complete."))
+
+            # DETECTED ANOMALIES TABLE
+            st.markdown("#### 🚩 Detected Fraud & Coding Violations")
+            anomalies = audit_res.get("detected_anomalies", [])
+            if anomalies:
+                df_anom = pd.DataFrame(anomalies)
+                st.table(df_anom)
+            else:
+                st.success("✅ No rule anomalies or fraudulent procedures detected.")
+
+            # RAW JSON RESPONSE VIEW
+            with st.expander("🔍 View Raw API JSON Output"):
+                st.json(audit_res)
+
+            # PDF Download Button
+            pdf_bytes = generate_fraud_report_pdf(audit_res)
+            st.download_button(
+                label="📄 Download Official PDF Fraud Investigation Report",
+                data=pdf_bytes,
+                file_name=f"MedIns_Fraud_Audit_Report.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        else:
+            st.info("👈 Upload a raw text (.txt) or Word (.docx) invoice or click **Audit Claim with Groq LPU API** to analyze.")
+
+# TAB 3: BATCH ANALYTICS & KAGGLE DATASETS
+with tab3:
     st.subheader("Batch Claims Analytics & Dynamic Dataset Persistence")
 
     st.markdown("#### 📥 Kaggle Dataset API Integration")
@@ -493,32 +665,29 @@ with tab2:
         st.markdown("#### Live Updated Claims Dataset")
         st.dataframe(df_claims.tail(15), use_container_width=True)
 
-# TAB 3: AI ARCHITECTURE & FRAMEWORKS
-with tab3:
+# TAB 4: AI ARCHITECTURE & FRAMEWORKS
+with tab4:
     st.subheader("Open-Source AI Stack & System Architecture")
 
     st.markdown("""
-    ### 1. Integrated AI Platforms & Tools:
-    - **Open-Source LLM:** Meta Llama 3.1 8B (via Groq Cloud LPUs)
+    ### 1. Document & Raw OCR Text Stack:
+    - **Supported Upload Formats:** Raw Text Documents (`.txt`) and Word Documents (`.docx`) containing raw OCR medical invoice text
+    - **Reasoning LLMs:** Meta Llama 3.3 70B Versatile / Meta Llama 3.1 8B Instant / Google Gemini 1.5 Flash
     - **Dataset API:** Kaggle Datasets API (`kaggle`)
     - **Machine Learning Frameworks:** `Scikit-Learn` (Isolation Forest, Random Forest Classifier), `Pandas`, `NumPy`
-    - **Vision & Document OCR:** `EasyOCR`, `Pillow (PIL)`
-    - **UI & Analytics:** `Streamlit`, `Plotly Express`
-    - **Orchestration:** `LangChain`, `Python-dotenv`
+    - **PDF Exporter Engine:** ReportLab / PIL Report Canvas Exporter
+    - **UI & Analytics:** Streamlit, Plotly Express
 
     ---
 
-    ### 2. End-to-End System Workflow:
+    ### 2. End-to-End Document Fraud Audit Workflow:
     ```
-    [ Hospital Bill / Kaggle Data ] ---> [ EasyOCR / Kaggle API ]
-                                                |
-                                                v
-    [ Claim Metadata & Tests ] ---------> [ Tabular ML Engine ]  ---> [ Isolation Forest Score ]
-                                                |                                   |
-                                                v                                   v
-                                        [ Llama 3.1 LLM Agent ] ---------> [ MedIns Risk Index ]
-                                                |                                   |
-                                                v                                   v
-                                    [ Deep Forensic Report ] ---------> [ Streamlit Dark UI ]
+    [ Upload .txt / .docx Raw Invoice ] ---> [ Text Extractor & Ingestion ]
+                                                     |
+                                                     v
+      [ Llama 3.3 70B via Groq LPU ] ---> [ Demographics, Diagnostic & Coding Audit ]
+                                                     |
+                                                     v
+              [ Download Official PDF Report ] <--- [ Tailored JSON & Anomalies Table ]
     ```
     """)
