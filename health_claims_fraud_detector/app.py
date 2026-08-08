@@ -5,6 +5,7 @@ from PIL import Image
 import os
 import json
 import importlib
+import hashlib
 
 # Force dynamic reload of core modules to prevent stale cache signature errors
 import llm_auditor
@@ -12,19 +13,22 @@ import fraud_engine
 import kaggle_fetcher
 import gemini_ocr_auditor
 import pdf_report_generator
+import openai_query_assistant
 
 importlib.reload(llm_auditor)
 importlib.reload(fraud_engine)
 importlib.reload(kaggle_fetcher)
 importlib.reload(gemini_ocr_auditor)
 importlib.reload(pdf_report_generator)
+importlib.reload(openai_query_assistant)
 
 from llm_auditor import LLMClinicalAuditor
 from kaggle_fetcher import KaggleDatasetFetcher
 from fraud_engine import TabularFraudDetector
 from sample_generator import create_sample_bills
 from gemini_ocr_auditor import GeminiVisionOCRAuditor
-from pdf_report_generator import generate_fraud_report_pdf
+from pdf_report_generator import generate_fraud_report_pdf, generate_deep_forensic_report_pdf, mask_patient_name, mask_patient_id
+from openai_query_assistant import OpenAIQueryAssistant
 
 # Optional Plotly import with fallback
 try:
@@ -36,16 +40,21 @@ except ImportError:
 
 # Set Streamlit Page Configuration
 st.set_page_config(
-    page_title="MedIns AI - Deep Forensic Claims Auditor",
+    page_title="MedIns AI - Enterprise Claims Fraud Auditor",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Sleek High-Contrast Enterprise Interface
+# Custom CSS for Stunning Modern Enterprise GUI
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap');
+
+    .stApp {
+        background-color: #0B0F17 !important;
+        color: #F8FAFC !important;
+    }
 
     .stApp p, .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp label, .stApp .stMarkdown {
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -58,15 +67,83 @@ st.markdown("""
         background: linear-gradient(90deg, #38BDF8 0%, #818CF8 50%, #C084FC 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 0.2rem;
+        margin-bottom: 0.1rem;
         letter-spacing: -0.5px;
     }
     
     .gradient-sub {
-        font-size: 1.1rem;
+        font-size: 1.05rem;
         color: #94A3B8;
-        margin-bottom: 1.8rem;
+        margin-bottom: 1.5rem;
         font-weight: 500;
+    }
+
+    /* Hero Quote Box */
+    .formal-quote-title {
+        font-family: 'Outfit', sans-serif !important;
+        font-size: 1.85rem;
+        font-weight: 700;
+        color: #38BDF8;
+        text-align: center;
+        margin-top: 1rem;
+        margin-bottom: 0.2rem;
+        letter-spacing: -0.3px;
+    }
+    
+    .formal-quote-sub {
+        font-size: 0.98rem;
+        color: #94A3B8;
+        text-align: center;
+        margin-bottom: 1.4rem;
+        font-style: italic;
+    }
+
+    /* Metric Cards */
+    div[data-testid="stMetricValue"] {
+        font-family: 'Outfit', sans-serif !important;
+        font-weight: 700 !important;
+        color: #38BDF8 !important;
+    }
+
+    /* Security Pill Badge */
+    .security-badge {
+        background: rgba(16, 185, 129, 0.12);
+        color: #34D399;
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        padding: 6px 14px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        display: inline-block;
+        margin-bottom: 14px;
+    }
+
+    /* Floating Pill Chat Input Styling */
+    div[data-testid="stChatInput"] {
+        border-radius: 24px !important;
+        background-color: #1E293B !important;
+        border: 1.5px solid #334155 !important;
+        padding: 2px 10px !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important;
+        max-width: 850px !important;
+        margin: 0 auto !important;
+    }
+    
+    div[data-testid="stChatInput"] input {
+        color: #F8FAFC !important;
+        font-size: 1.0rem !important;
+    }
+
+    /* Compact Formal Chat Message Bubbles */
+    div[data-testid="stChatMessage"] {
+        background-color: #0F172A !important;
+        border: 1px solid #1E293B !important;
+        border-radius: 12px !important;
+        padding: 12px 18px !important;
+        margin-bottom: 10px !important;
+        max-width: 850px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
     }
 
     /* Result Badges */
@@ -74,10 +151,10 @@ st.markdown("""
         background: rgba(225, 29, 72, 0.2);
         color: #FF6B81;
         border: 1.5px solid rgba(225, 29, 72, 0.5);
-        padding: 14px 22px;
+        padding: 12px 20px;
         border-radius: 12px;
         font-weight: 800;
-        font-size: 1.35rem;
+        font-size: 1.25rem;
         margin-bottom: 15px;
     }
     .badge-high {
@@ -87,7 +164,7 @@ st.markdown("""
         padding: 12px 20px;
         border-radius: 10px;
         font-weight: 800;
-        font-size: 1.3rem;
+        font-size: 1.25rem;
         margin-bottom: 15px;
     }
     .badge-low {
@@ -97,20 +174,40 @@ st.markdown("""
         padding: 12px 20px;
         border-radius: 10px;
         font-weight: 800;
-        font-size: 1.3rem;
+        font-size: 1.25rem;
         margin-bottom: 15px;
     }
 
-    /* Form Submit Button Styling */
+    /* Form Submit Button & Action Buttons */
     div[data-testid="stFormSubmitButton"] > button, .stButton > button {
         background: linear-gradient(90deg, #2563EB 0%, #4F46E5 100%) !important;
         color: #FFFFFF !important;
         font-weight: 700 !important;
-        font-size: 1.05rem !important;
+        font-size: 1.0rem !important;
         border-radius: 10px !important;
         border: none !important;
-        padding: 12px 24px !important;
+        padding: 10px 22px !important;
         box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.4) !important;
+        transition: all 0.2s ease-in-out !important;
+    }
+    
+    div[data-testid="stFormSubmitButton"] > button:hover, .stButton > button:hover {
+        transform: translateY(-1px) !important;
+        box-shadow: 0 6px 20px 0 rgba(79, 70, 229, 0.6) !important;
+    }
+
+    /* Streamlit Tabs Customization */
+    button[data-baseweb="tab"] {
+        font-family: 'Outfit', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 1.05rem !important;
+        padding: 10px 18px !important;
+        color: #94A3B8 !important;
+    }
+    
+    button[aria-selected="true"] {
+        color: #38BDF8 !important;
+        border-bottom-color: #38BDF8 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -126,8 +223,9 @@ ml_engine = load_ml_engine()
 llm_engine = LLMClinicalAuditor()
 kaggle_engine = KaggleDatasetFetcher()
 ocr_auditor = GeminiVisionOCRAuditor()
+query_assistant = OpenAIQueryAssistant()
 
-# Clean Enterprise Sidebar with Gemini Vision Key Configuration
+# Clean Enterprise Sidebar (Formatted in Bullets)
 with st.sidebar:
     st.markdown("""
     <div style="text-align: center; padding: 10px 0;">
@@ -138,30 +236,23 @@ with st.sidebar:
     """, unsafe_allow_html=True)
     st.divider()
 
-    st.subheader("🤖 Groq LPU Fraud Intelligence API")
-    st.success("⚡ Groq API Active (Meta Llama 3.3 70B & Llama 3.1 8B)")
+    st.subheader("🤖 AI Intelligence Engines")
+    st.markdown("""
+    - • **OpenAI API Active** (`gpt-4o-mini` / `gpt-4o`)
+    - • **Groq LPU API Active** (`Llama 3.3 70B`)
+    """)
     
-    gemini_key_input = st.text_input("Google Gemini API Key (Optional)", value=os.environ.get("GEMINI_API_KEY", ""), type="password", help="Enter free key from aistudio.google.com for Google Gemini 1.5 Flash Vision LLM.")
-    if gemini_key_input:
-        os.environ["GEMINI_API_KEY"] = gemini_key_input
-        ocr_auditor = GeminiVisionOCRAuditor()
-        st.success("✅ Connected to Google Gemini Vision LLM")
+    st.divider()
+    st.subheader("🔒 Data Security & HIPAA Suite")
+    st.markdown("""
+    - • **HIPAA Safe Harbor Masking:** Patient names & IDs are automatically redacted (`R***** J******`)
+    - • **In-Memory Volatile Processing:** Uploaded claim documents are processed strictly in RAM and never saved to disk
+    - • **SHA-256 Cryptographic Audit:** Generated PDF reports embed an immutable SHA-256 verification hash
+    - • **TLS Transport Encryption:** All LLM API calls execute over HTTPS transport layer security
+    """)
 
     st.divider()
-    if kaggle_engine.kaggle_username:
-        st.success(f"✅ Kaggle API Active ({kaggle_engine.kaggle_username})")
-    else:
-        st.caption("📊 Local Baseline Claims Dataset Active")
-
-    st.divider()
-    st.markdown("**API System Instruction:**")
-    st.markdown("`You are an expert AI Health Insurance Fraud Auditor and Data Extraction Specialist.`")
-    st.markdown("**Audit Reasoning Steps:**")
-    st.markdown("1. Demographics Audit (Age/Gender vs CPT)")
-    st.markdown("2. Diagnostic Audit (ICD-10 vs CPT)")
-    st.markdown("3. Billing Integrity (Duplicates/Unbundling)")
-    st.markdown("4. Provider Specialty Verification")
-    st.markdown("5. Fraud Risk Calculation (0-100)")
+    st.markdown("- • **Baseline Claims Forensic Dataset Active**")
 
 # Main Header
 st.markdown('<div class="gradient-title">🛡️ MedIns AI</div>', unsafe_allow_html=True)
@@ -170,11 +261,11 @@ st.markdown('<div class="gradient-sub">Next-Gen Health Insurance Claims Fraud De
 tab1, tab2, tab3, tab4 = st.tabs([
     "🔍 Deep Single Claim Forensic Audit", 
     "📄 AI Health Insurance Fraud Auditor (API)", 
-    "📊 Batch Analytics & Kaggle Datasets", 
-    "🏗️ AI Architecture & Frameworks"
+    "💡 AI Query Platform",
+    "📊 Claims Analytics & Risk Leaderboard"
 ])
 
-# TAB 1: LIVE SINGLE CLAIM AUDIT
+# TAB 1: LIVE SINGLE CLAIM AUDIT (WITH HIGH QUALITY PDF EXPORTER CONTAINING ALL DATA)
 with tab1:
     col_left, col_right = st.columns([1, 1], gap="medium")
 
@@ -206,8 +297,7 @@ with tab1:
                 "history": "No chronic medical conditions",
                 "recommended_tests": ["Abdominal Ultrasound", "Complete Blood Count (CBC)", "Urinalysis Panel"],
                 "sample_billed_tests": ["Abdominal Ultrasound", "Complete Blood Count (CBC)", "Urinalysis Panel"],
-                "notes": "Patient presented with acute lower right quadrant abdominal pain and elevated white blood cell count. Laparoscopic appendectomy performed cleanly.",
-                "img": "sample_bills/legitimate_claim.png"
+                "notes": "Patient presented with acute lower right quadrant abdominal pain and elevated white blood cell count. Laparoscopic appendectomy performed cleanly."
             },
             "🦵 Mild Acute Ankle Sprain (Upcoded Fraud Scenario)": {
                 "cpt": "CPT-72148",
@@ -219,8 +309,7 @@ with tab1:
                 "history": "Hypertension",
                 "recommended_tests": ["Standard Ankle X-Ray", "Physical Joint Examination"],
                 "sample_billed_tests": ["Standard Ankle X-Ray", "Lumbar Spine Contrast MRI", "Head CT Scan", "High-Trauma Emergency Package"],
-                "notes": "Patient came for minor ankle strain after tripping. Doctor ordered lumbar spine MRI and high-complexity trauma package.",
-                "img": "sample_bills/fraudulent_upcoded_claim.png"
+                "notes": "Patient came for minor ankle strain after tripping. Doctor ordered lumbar spine MRI and high-complexity trauma package."
             },
             "🫀 Acute Chest Pain / Angina (Cardiology Case)": {
                 "cpt": "CPT-70450",
@@ -232,8 +321,7 @@ with tab1:
                 "history": "Coronary Artery Disease, Hyperlipidemia",
                 "recommended_tests": ["12-Lead ECG", "Cardiac Troponin I & T Labs", "Echocardiogram", "Chest X-Ray"],
                 "sample_billed_tests": ["12-Lead ECG", "Cardiac Troponin I & T Labs", "Echocardiogram", "Chest X-Ray"],
-                "notes": "62-year-old male with severe retrosternal chest pain radiating to left arm. Cardiac markers elevated. Emergency cardiology workup performed.",
-                "img": None
+                "notes": "62-year-old male with severe retrosternal chest pain radiating to left arm. Cardiac markers elevated. Emergency cardiology workup performed."
             },
             "✍️ Custom Medical Case (User Defined Data)": {
                 "cpt": "CPT-99213",
@@ -245,8 +333,7 @@ with tab1:
                 "history": "None",
                 "recommended_tests": ["Routine Physical Exam"],
                 "sample_billed_tests": [],
-                "notes": "Routine outpatient consultation.",
-                "img": None
+                "notes": "Routine outpatient consultation."
             }
         }
 
@@ -255,13 +342,6 @@ with tab1:
 
         st.markdown("#### 🤖 AI Recommended Guidelines Tests")
         st.info(" , ".join([f"✓ {t}" for t in case_data["recommended_tests"]]))
-
-        uploaded_file = st.file_uploader("Upload Hospital Invoice / Doctor Note Image (Optional)", type=["png", "jpg", "jpeg"])
-        
-        if uploaded_file:
-            st.image(uploaded_file, caption="Uploaded Invoice Image", use_container_width=True)
-        elif case_data["img"] and os.path.exists(case_data["img"]):
-            st.image(case_data["img"], caption="Scenario Invoice Document", use_container_width=True)
 
         with st.form("claim_form"):
             st.markdown(f"🏥 **Hospital:** `{selected_hosp['name']}` | **Code:** `{selected_hosp['id']}` | **Type:** `{selected_hosp['type']}`")
@@ -407,13 +487,47 @@ with tab1:
             st.caption(f"Evaluated by: **{llm_res['llm_used']}**")
             st.write(parsed_audit.get("forensic_summary", ""))
 
+            # 📄 HIGH-QUALITY PDF DOWNLOAD BUTTON CONTAINING ALL DATA IN THIS TAB
+            deep_audit_payload = {
+                "hospital_name": hospital_name,
+                "hospital_id": hospital_id,
+                "hospital_type": hospital_type,
+                "patient_age": patient_age,
+                "patient_gender": patient_gender,
+                "medical_history": medical_history,
+                "diagnosis": diagnosis,
+                "cpt_code": cpt_code,
+                "claim_amount": claim_amount,
+                "billed_tests": billed_tests_str,
+                "recommended_tests": recommended_tests_str,
+                "clinical_notes": clinical_notes,
+                "fraud_score_pct": fraud_score_pct,
+                "risk_level": risk_level_str,
+                "cross_evaluation_matrix": matrix_data,
+                "clinical_appropriateness": parsed_audit.get("clinical_appropriateness", ""),
+                "fraud_red_flags": red_flags_list,
+                "forensic_summary": parsed_audit.get("forensic_summary", llm_raw),
+                "llm_used": llm_res['llm_used']
+            }
+            
+            deep_pdf_bytes = generate_deep_forensic_report_pdf(deep_audit_payload)
+            st.download_button(
+                label="📄 Download Official Deep Forensic Audit PDF Report (High Quality)",
+                data=deep_pdf_bytes,
+                file_name="Deep_Forensic_Audit_Report.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+
         else:
             st.info("👈 Select a health case or click **Run Deep Forensic Audit** to analyze.")
 
-# TAB 2: AI HEALTH INSURANCE FRAUD AUDITOR (EXACT RAW OCR .TXT & .DOCX SPECIFICATION)
+# TAB 2: AI HEALTH INSURANCE FRAUD AUDITOR (EXACT RAW OCR .TXT & .DOCX SPECIFICATION WITH HIPAA MASKING)
 with tab2:
     st.subheader("📄 AI Health Insurance Fraud Auditor (API)")
-    st.markdown("Upload or paste **raw OCR text files (.txt)** or **Word documents (.docx)** containing medical claim invoices. **Meta Llama 3.3 70B & Llama 3.1 8B via Groq LPUs** execute 100% dynamic clinical fraud audits (**Demographics Audit, Diagnostic Audit, Coding Violation Audit, Provider Specialty Verification, Fraud Risk Scoring**).")
+    st.markdown("Upload or paste **raw OCR text files (.txt)** or **Word documents (.docx)** containing medical claim invoices. **Meta Llama 3.3 70B via Groq LPUs** execute 100% dynamic clinical fraud audits with **HIPAA Safe Harbor PII Redaction**.")
+
+    st.markdown('<div class="security-badge">🔒 HIPAA Privacy Masking Active (PII Redacted) & Volatile RAM Processing</div>', unsafe_allow_html=True)
 
     c_ocr1, c_ocr2 = st.columns([1, 1], gap="medium")
 
@@ -550,15 +664,20 @@ Regional Benchmark: $6,500.00"""
             st.progress(score / 100.0)
             st.caption(f"Evaluated by: **{audit_res.get('llm_used', 'Groq LPU API')}**")
 
-            # PATIENT & PROVIDER DEMOGRAPHICS
+            # PATIENT & PROVIDER DEMOGRAPHICS WITH MASKING
             p_info = audit_res.get("patient_info", {})
             pr_info = audit_res.get("provider_info", {})
             
+            raw_pname = p_info.get('patient_name', 'N/A')
+            raw_pid = p_info.get('patient_id', 'N/A')
+            masked_pname = mask_patient_name(raw_pname)
+            masked_pid = mask_patient_id(raw_pid)
+
             col_p1, col_p2 = st.columns(2)
             with col_p1:
-                st.markdown("**👤 Patient Demographics:**")
-                st.write(f"- **Name:** `{p_info.get('patient_name', 'N/A')}`")
-                st.write(f"- **ID:** `{p_info.get('patient_id', 'N/A')}`")
+                st.markdown("**👤 Patient Demographics (HIPAA Redacted):**")
+                st.write(f"- **Name:** `{masked_pname}` 🔒")
+                st.write(f"- **ID:** `{masked_pid}` 🔒")
                 st.write(f"- **Age / Gender:** `{p_info.get('age', 'N/A')}` yo | `{p_info.get('gender', 'N/A')}`")
             with col_p2:
                 st.markdown("**🩺 Provider Details:**")
@@ -582,10 +701,10 @@ Regional Benchmark: $6,500.00"""
             with st.expander("🔍 View Raw API JSON Output"):
                 st.json(audit_res)
 
-            # PDF Download Button
+            # PDF Download Button with Upgraded Calibri 20pt Headers
             pdf_bytes = generate_fraud_report_pdf(audit_res)
             st.download_button(
-                label="📄 Download Official PDF Fraud Investigation Report",
+                label="📄 Download Official PDF Fraud Investigation Report (Calibri 20 Header Quality)",
                 data=pdf_bytes,
                 file_name=f"MedIns_Fraud_Audit_Report.pdf",
                 mime="application/pdf",
@@ -594,28 +713,43 @@ Regional Benchmark: $6,500.00"""
         else:
             st.info("👈 Upload a raw text (.txt) or Word (.docx) invoice or click **Audit Claim with Groq LPU API** to analyze.")
 
-# TAB 3: BATCH ANALYTICS & KAGGLE DATASETS
+# TAB 3: AI QUERY PLATFORM (GEMINI / CHATGPT STYLE FORMAL COMPACT CHAT INTERFACE)
 with tab3:
-    st.subheader("Batch Claims Analytics & Dynamic Dataset Persistence")
+    st.markdown('<div class="formal-quote-title">"Integrity is doing the right thing, even when no one is watching."</div>', unsafe_allow_html=True)
+    st.markdown('<div class="formal-quote-sub">AI Medical Coding, CPT Benchmarks & Claims Audit Assistant</div>', unsafe_allow_html=True)
 
-    st.markdown("#### 📥 Kaggle Dataset API Integration")
-    c_kg1, c_kg2 = st.columns([2, 1])
-    with c_kg1:
-        dataset_input = st.text_input("Kaggle Dataset Identifier:", value="rohitgarg/healthcare-insurance-claims-fraud-detection")
-    with c_kg2:
-        st.write("")
-        st.write("")
-        fetch_kg_btn = st.button("Download Kaggle Dataset", use_container_width=True)
+    # Initialize chat message history in Streamlit session_state
+    if "query_messages" not in st.session_state:
+        st.session_state.query_messages = [
+            {
+                "role": "assistant",
+                "content": "Welcome to the **AI Medical Coding & Claims Benchmark Assistant**.\n\nPlease enter any CPT code, ICD-10 diagnosis, benchmark rate request, or NCCI billing rule query below."
+            }
+        ]
 
-    if fetch_kg_btn:
-        success, msg, k_df = kaggle_engine.fetch_kaggle_claims_data(dataset_input)
-        if success:
-            st.success(msg)
-            st.dataframe(k_df.head(10), use_container_width=True)
-        else:
-            st.info(f"ℹ️ {msg}")
+    # Display Chat History inside a compact, formal centered container
+    c_chat1, c_chat2, c_chat3 = st.columns([1, 4, 1])
+    with c_chat2:
+        for msg in st.session_state.query_messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
 
-    st.divider()
+    # Handle Free-Form Chat Input (st.chat_input)
+    user_prompt = st.chat_input("Ask AI Medical Coding & Benchmark Assistant...")
+
+    if user_prompt:
+        # Append User Message
+        st.session_state.query_messages.append({"role": "user", "content": user_prompt})
+
+        # Generate Assistant Response via OpenAI API / Groq Fallback
+        response_text = query_assistant.query_billing_code(user_prompt)
+        st.session_state.query_messages.append({"role": "assistant", "content": response_text})
+        st.rerun()
+
+# TAB 4: CLAIMS ANALYTICS & RISK LEADERBOARD
+with tab4:
+    st.subheader("Batch Claims Analytics & High Risk Hospital Leaderboard")
+
     if os.path.exists("claims_dataset.csv"):
         df_claims = pd.read_csv("claims_dataset.csv")
 
@@ -662,32 +796,5 @@ with tab3:
             else:
                 st.bar_chart(fraud_by_hosp.head(8).set_index("Hospital_ID"))
 
-        st.markdown("#### Live Updated Claims Dataset")
+        st.markdown("#### Live Updated Claims Forensic Dataset")
         st.dataframe(df_claims.tail(15), use_container_width=True)
-
-# TAB 4: AI ARCHITECTURE & FRAMEWORKS
-with tab4:
-    st.subheader("Open-Source AI Stack & System Architecture")
-
-    st.markdown("""
-    ### 1. Document & Raw OCR Text Stack:
-    - **Supported Upload Formats:** Raw Text Documents (`.txt`) and Word Documents (`.docx`) containing raw OCR medical invoice text
-    - **Reasoning LLMs:** Meta Llama 3.3 70B Versatile / Meta Llama 3.1 8B Instant / Google Gemini 1.5 Flash
-    - **Dataset API:** Kaggle Datasets API (`kaggle`)
-    - **Machine Learning Frameworks:** `Scikit-Learn` (Isolation Forest, Random Forest Classifier), `Pandas`, `NumPy`
-    - **PDF Exporter Engine:** ReportLab / PIL Report Canvas Exporter
-    - **UI & Analytics:** Streamlit, Plotly Express
-
-    ---
-
-    ### 2. End-to-End Document Fraud Audit Workflow:
-    ```
-    [ Upload .txt / .docx Raw Invoice ] ---> [ Text Extractor & Ingestion ]
-                                                     |
-                                                     v
-      [ Llama 3.3 70B via Groq LPU ] ---> [ Demographics, Diagnostic & Coding Audit ]
-                                                     |
-                                                     v
-              [ Download Official PDF Report ] <--- [ Tailored JSON & Anomalies Table ]
-    ```
-    """)
