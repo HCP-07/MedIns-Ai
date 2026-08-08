@@ -265,7 +265,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Claims Analytics & Risk Leaderboard"
 ])
 
-# TAB 1: LIVE SINGLE CLAIM AUDIT (WITH HIGH QUALITY PDF EXPORTER CONTAINING ALL DATA)
+# TAB 1: LIVE SINGLE CLAIM AUDIT (HIGH QUALITY PDF EXPORTER WITH AI SUMMARY & RED FLAGS)
 with tab1:
     col_left, col_right = st.columns([1, 1], gap="medium")
 
@@ -485,9 +485,9 @@ with tab1:
 
             st.markdown("#### 💡 Forensic Summary & Verdict")
             st.caption(f"Evaluated by: **{llm_res['llm_used']}**")
-            st.write(parsed_audit.get("forensic_summary", ""))
+            st.write(parsed_audit.get("forensic_summary", llm_raw))
 
-            # 📄 HIGH-QUALITY PDF DOWNLOAD BUTTON CONTAINING ALL DATA IN THIS TAB
+            # 📄 HIGH QUALITY CALIBRI 20 PDF DOWNLOAD BUTTON (TAB 1)
             deep_audit_payload = {
                 "hospital_name": hospital_name,
                 "hospital_id": hospital_id,
@@ -512,7 +512,7 @@ with tab1:
             
             deep_pdf_bytes = generate_deep_forensic_report_pdf(deep_audit_payload)
             st.download_button(
-                label="📄 Download Official Deep Forensic Audit PDF Report (High Quality)",
+                label="📄 Download Official Deep Forensic Audit PDF Report (Calibri 20 Header Quality)",
                 data=deep_pdf_bytes,
                 file_name="Deep_Forensic_Audit_Report.pdf",
                 mime="application/pdf",
@@ -701,7 +701,7 @@ Regional Benchmark: $6,500.00"""
             with st.expander("🔍 View Raw API JSON Output"):
                 st.json(audit_res)
 
-            # PDF Download Button with Upgraded Calibri 20pt Headers
+            # 📄 HIGH QUALITY CALIBRI 20 PDF DOWNLOAD BUTTON (TAB 2)
             pdf_bytes = generate_fraud_report_pdf(audit_res)
             st.download_button(
                 label="📄 Download Official PDF Fraud Investigation Report (Calibri 20 Header Quality)",
