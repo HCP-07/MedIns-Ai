@@ -2,6 +2,7 @@ import os
 import io
 import textwrap
 import hashlib
+from PIL import Image, ImageDraw, ImageFont
 
 def mask_patient_name(name):
     """Masks patient names to comply with HIPAA Safe Harbor de-identification."""
@@ -30,6 +31,70 @@ def clean_text_for_pdf(text):
     if not isinstance(text, str):
         text = str(text)
     return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+def create_pil_canvas_pdf_fallback(title_str, risk_banner_str, summary_str, info_dict, anomalies_list, is_severe=False):
+    """
+    Fail-safe high-resolution PIL Canvas PDF Generator.
+    Guarantees a valid, openable 100% clean PDF file even if ReportLab is unavailable on cloud deployment.
+    """
+    img = Image.new('RGB', (1200, 1600), color=(255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    # Header Bar
+    draw.rectangle([(0, 0), (1200, 100)], fill=(15, 23, 42))
+    draw.text((50, 32), title_str, fill=(56, 189, 248))
+
+    y = 130
+    # Risk Banner
+    banner_color = (190, 18, 60) if is_severe else (16, 185, 129)
+    draw.rectangle([(50, y), (1150, y + 55)], fill=banner_color)
+    draw.text((80, y + 16), risk_banner_str, fill=(255, 255, 255))
+    y += 80
+
+    # Executive AI Summary Box
+    draw.rectangle([(50, y), (1150, y + 160)], fill=(239, 246, 255), outline=(191, 219, 254), width=2)
+    draw.text((70, y + 15), "EXECUTIVE AI AUDIT SUMMARY & CLINICAL VERDICT:", fill=(30, 58, 138))
+    
+    sum_lines = textwrap.wrap(summary_str, width=110)
+    sy = y + 45
+    for s_line in sum_lines[:5]:
+        draw.text((70, sy), s_line, fill=(15, 23, 42))
+        sy += 22
+    y += 180
+
+    # Flagged Red Flags & Anomalies
+    draw.text((50, y), "FLAGGED FRAUD RED FLAGS & WARNINGS:", fill=(15, 23, 42))
+    y += 30
+    if anomalies_list and anomalies_list != ["None detected"]:
+        for a in anomalies_list[:4]:
+            if isinstance(a, dict):
+                a_type = a.get('type', 'Anomaly')
+                a_desc = a.get('description', '')
+                a_str = f"• [RED FLAG - {a_type}] {a_desc}"
+            else:
+                a_str = f"• [RED FLAG WARNING] {a}"
+            
+            draw.rectangle([(50, y), (1150, y + 40)], fill=(255, 228, 230), outline=(254, 205, 211), width=1)
+            draw.text((70, y + 10), a_str[:110], fill=(153, 27, 27))
+            y += 48
+    else:
+        draw.rectangle([(50, y), (1150, y + 40)], fill=(236, 253, 245), outline=(167, 243, 208), width=1)
+        draw.text((70, y + 10), "✓ Clean Claim — No clinical red flags or test over-utilization detected.", fill=(16, 185, 129))
+        y += 50
+    y += 15
+
+    # Demographics Info Box
+    draw.rectangle([(50, y), (1150, y + 180)], fill=(241, 245, 249), outline=(203, 213, 225), width=1)
+    draw.text((70, y + 15), "CLAIM & CLINICAL DEMOGRAPHICS:", fill=(30, 41, 59))
+    dy = y + 45
+    for k, v in info_dict.items():
+        draw.text((70, dy), f"{k}: {v}", fill=(51, 65, 85))
+        dy += 24
+
+    pdf_buffer = io.BytesIO()
+    img.save(pdf_buffer, format='PDF', quality=100)
+    pdf_buffer.seek(0)
+    return pdf_buffer.getvalue()
 
 def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic_Audit_Report.pdf"):
     """
@@ -79,12 +144,12 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
         styles = getSampleStyleSheet()
 
         # Prominent Calibri 20pt / Helvetica-Bold 20pt Styles
-        title_20pt_style = ParagraphStyle('DocTitle20', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
-        header_20pt_style = ParagraphStyle('Header20', parent=styles['Heading2'], fontSize=15, leading=19, textColor=colors.HexColor('#1E293B'), spaceBefore=10, spaceAfter=4)
-        sub_style = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#64748B'), spaceAfter=8)
-        body_style = ParagraphStyle('BodyCustom', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#334155'), leading=14)
-        summary_style = ParagraphStyle('SummaryCustom', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#0F172A'), leading=15)
-        redflag_style = ParagraphStyle('RedFlagCustom', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#991B1B'), leading=14)
+        title_20pt_style = ParagraphStyle('DocTitle20_T1', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
+        header_20pt_style = ParagraphStyle('Header20_T1', parent=styles['Heading2'], fontSize=15, leading=19, textColor=colors.HexColor('#1E293B'), spaceBefore=10, spaceAfter=4)
+        sub_style = ParagraphStyle('DocSub_T1', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#64748B'), spaceAfter=8)
+        body_style = ParagraphStyle('BodyCustom_T1', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#334155'), leading=14)
+        summary_style = ParagraphStyle('SummaryCustom_T1', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#0F172A'), leading=15)
+        redflag_style = ParagraphStyle('RedFlagCustom_T1', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#991B1B'), leading=14)
 
         elements = []
 
@@ -194,8 +259,15 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
         return buffer.getvalue()
 
     except Exception as e:
-        print(f"ReportLab Deep Forensic PDF generation error: {e}")
-        return b""
+        print(f"ReportLab Deep Forensic PDF generation fallback: {e}")
+        info_d = {
+            "Hospital": f"{h_name} ({h_id})",
+            "Patient": f"{p_age} yo {p_gender}",
+            "Diagnosis": diag,
+            "Billed CPT": cpt,
+            "Claimed Amount": amt
+        }
+        return create_pil_canvas_pdf_fallback("Deep Forensic Claims Investigation Report", f"MEDINS RISK INDEX: {score}% — RISK LEVEL: {risk_level}", summary_text, info_d, red_flags, is_severe=(risk_level in ["HIGH", "SEVERE"]))
 
 def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Report.pdf"):
     """
@@ -238,12 +310,12 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
         styles = getSampleStyleSheet()
 
         # Prominent Calibri 20pt / Helvetica-Bold 20pt Styles
-        title_20pt_style = ParagraphStyle('DocTitle20', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
-        header_20pt_style = ParagraphStyle('Header20', parent=styles['Heading2'], fontSize=15, leading=19, textColor=colors.HexColor('#1E293B'), spaceBefore=10, spaceAfter=4)
-        sub_style = ParagraphStyle('DocSub', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#64748B'), spaceAfter=8)
-        body_style = ParagraphStyle('BodyCustom', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#334155'), leading=14)
-        summary_style = ParagraphStyle('SummaryCustom', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#0F172A'), leading=15)
-        redflag_style = ParagraphStyle('RedFlagCustom', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#991B1B'), leading=14)
+        title_20pt_style = ParagraphStyle('DocTitle20_T2', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
+        header_20pt_style = ParagraphStyle('Header20_T2', parent=styles['Heading2'], fontSize=15, leading=19, textColor=colors.HexColor('#1E293B'), spaceBefore=10, spaceAfter=4)
+        sub_style = ParagraphStyle('DocSub_T2', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#64748B'), spaceAfter=8)
+        body_style = ParagraphStyle('BodyCustom_T2', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#334155'), leading=14)
+        summary_style = ParagraphStyle('SummaryCustom_T2', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#0F172A'), leading=15)
+        redflag_style = ParagraphStyle('RedFlagCustom_T2', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#991B1B'), leading=14)
 
         elements = []
 
@@ -338,7 +410,13 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
 
     except Exception as e:
         print(f"ReportLab PDF generation error: {e}")
-        return b""
+        info_d = {
+            "Patient Name": p_name,
+            "Patient ID": p_id,
+            "Age / Gender": f"{p_age} yo {p_gender}",
+            "Provider": f"{doc_name} ({doc_spec})"
+        }
+        return create_pil_canvas_pdf_fallback("Health Insurance Fraud Investigation Audit Report", f"FRAUD RISK SCORE: {score}/100 — RISK CATEGORY: {category}", summary_text, info_d, anomalies, is_severe=(category in ["HIGH", "SEVERE"]))
 
 def generate_visual_fraud_report_pdf(audit_data, output_filename="Visual_Claim_Audit_Report.pdf"):
     """Legacy visual report exporter wrapper."""

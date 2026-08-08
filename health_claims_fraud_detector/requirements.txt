@@ -6,3 +6,8 @@ plotly
 scikit-learn
 groq
 python-dotenv
+openai
+google-generativeai
+python-docx
+docx2txt
+reportlab
