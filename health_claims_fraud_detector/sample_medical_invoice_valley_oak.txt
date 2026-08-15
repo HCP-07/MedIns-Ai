@@ -1,0 +1,26 @@
+====================================================
+VALLEY OAK MEDICAL CENTER - INVOICE / CLAIM FORM
+====================================================
+Patient Name: Robert Jenkins
+DOB: 11/14/1957 (Age: 68)
+Gender: MALE
+Patient ID: VOMC-883920
+Date of Service: 10/12/2026
+Provider Name: Dr. Sarah Lin, MD (Orthopedics)
+
+Primary Diagnosis (ICD-10):
+M54.5 - Low Back Pain, unspecified
+
+SERVICES RENDERED:
+CODE     DESCRIPTION                              QTY    CHARGE
+------------------------------------------------------------------
+99214    Office Visit - Established, Mod-High     1      $ 175.00
+72148    MRI Lumbar Spine, without contrast       1      $ 950.00
+70551    MRI Brain, without contrast              1      $ 950.00
+81025    Urine Pregnancy Test (hCG)               1      $  45.00
+99381    Prev. Visit, Infant (under 1 year)       1      $ 120.00
+72148    MRI Lumbar Spine, without contrast       1      $ 950.00
+------------------------------------------------------------------
+TOTAL BILLED AMOUNT:                                     $ 3190.00
+====================================================
+Notes: Patient complained of acute lower back pain after lifting a heavy box. Recommended rest and prescribed painkillers. Routine screenings performed.

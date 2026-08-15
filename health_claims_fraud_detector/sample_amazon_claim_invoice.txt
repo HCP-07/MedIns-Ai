@@ -1,0 +1,21 @@
+====================================================
+AMAZON CORPORATE HEALTHCARE CLAIM INVOICE
+====================================================
+Patient Name: Vikram Malhotra
+Patient ID: PAT-AMZ-77102
+Employer: Amazon Development Center India
+Scheme: Silver Standard Group Mediclaim
+Date of Service: 02/10/2026
+Provider Name: Dr. Marcus Vance, MD (Emergency Medicine)
+
+Diagnosis (ICD-10): S93.401A - Severe Trauma & Joint Injury
+Primary Procedure: CPT-72148 (High-Trauma Emergency Package)
+
+ITEMIZED CHARGES:
+1. Emergency Surgery & Intensive Care Admission   $ 8,500.00
+2. Advanced Diagnostic CT & Contrast MRI Panel    $ 2,500.00
+3. Splinting, Immobilizer & Post-Op Assist       $ 1,500.00
+
+TOTAL CLAIMED AMOUNT: $12,500.00
+Status: Submitted for Corporate Insurance Audit
+====================================================

@@ -1,0 +1,13 @@
+====================================================
+AMAZON CORPORATE HEALTHCARE POLICY ELIGIBILITY FORM
+====================================================
+Patient Name: Vikram Malhotra
+Patient ID: PAT-AMZ-77102
+Employer: Amazon Development Center India
+Scheme: Silver Standard Group Mediclaim
+Date of Service: 02/10/2026
+Diagnosis: Severe Lower Leg Trauma (ICD-10 S93.401A)
+Billed CPT: CPT-72148 (High-Trauma Emergency Package)
+Total Claimed Amount: $12,500.00
+Status: Submitted for Corporate Scheme Verification
+====================================================

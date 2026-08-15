@@ -1,0 +1,13 @@
+====================================================
+VALLEY OAK MEDICAL CENTER - CORPORATE POLICY ELIGIBILITY FORM
+====================================================
+Patient Name: Robert Jenkins
+Patient ID: PAT-TCS-88392
+Employer: Tata Consultancy Services (TCS)
+Scheme: Executive Platinum Shield Cover
+Date of Service: 10/12/2026
+Diagnosis: Lumbar Spine Strain & Acute Back Pain (ICD-10 M54.5)
+Billed CPT: CPT-72148 (MRI Lumbar Spine)
+Total Claimed Amount: $3,190.00
+Status: Submitted for Corporate Scheme Verification
+====================================================

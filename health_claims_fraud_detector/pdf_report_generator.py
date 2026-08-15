@@ -2,7 +2,7 @@ import os
 import io
 import textwrap
 import hashlib
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 def mask_patient_name(name):
     """Masks patient names to comply with HIPAA Safe Harbor de-identification."""
@@ -96,6 +96,192 @@ def create_pil_canvas_pdf_fallback(title_str, risk_banner_str, summary_str, info
     pdf_buffer.seek(0)
     return pdf_buffer.getvalue()
 
+def generate_corporate_scheme_report_pdf(enquiry_res, output_filename="Corporate_Policy_Eligibility_Report.pdf"):
+    """
+    Generates a high-quality PDF Corporate Policy & Scheme Eligibility Report.
+    Includes all details:
+    - Corporate Employer & Group Policy Status
+    - Patient Coverage Demographics (HIPAA Masked)
+    - Scheme Limits vs Claim Coverage Matrix
+    - Claim Applicability Verdict (APPLICABLE FOR CLAIM vs INELIGIBLE)
+    - Policy Risk Warnings & Flagged Anomalies
+    - Patient Historical Fraud Logs
+    - 20pt Calibri / Helvetica-Bold Header Quality & SHA-256 Token
+    """
+    p_rec = enquiry_res.get("patient_record", {})
+    emp = enquiry_res.get("employer_info", {})
+    sch = enquiry_res.get("scheme_info", {})
+    
+    raw_pname = p_rec.get("patient_name", "N/A")
+    raw_pid = p_rec.get("patient_id", "N/A")
+    p_name = mask_patient_name(raw_pname)
+    p_id = mask_patient_id(raw_pid)
+    
+    employer_name = emp.get("employer_code", "N/A")
+    group_id = emp.get("policy_group_id", "N/A")
+    insurer = emp.get("default_insurer", "N/A")
+    
+    scheme_name = sch.get("scheme_code", "N/A")
+    max_cap = f"${sch.get('max_annual_sum_insured', 0):,.2f}"
+    room_cap = f"${sch.get('room_rent_cap_per_day', 0):,.2f} / day"
+    copay = sch.get("copay_percentage", "0%")
+    wait_period = f"{sch.get('pre_existing_disease_wait_months', 0)} Months"
+    
+    claim_amount = f"${enquiry_res.get('claim_amount', 0):,.2f}"
+    cpt_code = str(enquiry_res.get('cpt_code', 'N/A'))
+    rem_sum = f"${p_rec.get('remaining_sum_insured', 0):,.2f}"
+    
+    is_app = enquiry_res.get("is_applicable", False)
+    warnings = enquiry_res.get("risk_warnings", [])
+    fraud_logs = p_rec.get("fraud_history_records", [])
+
+    status_str = "APPLICABLE FOR CLAIM REQUEST" if is_app and not warnings else "CLAIM INELIGIBLE / POLICY FLAGGED"
+
+    payload = f"{raw_pid}:{group_id}:{claim_amount}:{status_str}"
+    security_hash = hashlib.sha256(payload.encode('utf-8')).hexdigest()[:16].upper()
+
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
+        styles = getSampleStyleSheet()
+
+        title_20pt_style = ParagraphStyle('DocTitle20_Corp', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
+        header_20pt_style = ParagraphStyle('Header20_Corp', parent=styles['Heading2'], fontSize=15, leading=19, textColor=colors.HexColor('#1E293B'), spaceBefore=10, spaceAfter=4)
+        sub_style = ParagraphStyle('DocSub_Corp', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#64748B'), spaceAfter=8)
+        body_style = ParagraphStyle('BodyCustom_Corp', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#334155'), leading=14)
+        summary_style = ParagraphStyle('SummaryCustom_Corp', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#0F172A'), leading=15)
+        redflag_style = ParagraphStyle('RedFlagCustom_Corp', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#991B1B'), leading=14)
+
+        elements = []
+
+        # 1. 20pt Header
+        elements.append(Paragraph("<b>Corporate Policy & Scheme Eligibility Audit Report</b>", title_20pt_style))
+        elements.append(Paragraph(f"Employer: {clean_text_for_pdf(p_rec.get('employer', 'N/A'))} | Group Policy ID: {clean_text_for_pdf(group_id)} | SHA-256 Token: <code>{security_hash}</code>", sub_style))
+        elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#CBD5E1'), spaceAfter=8))
+
+        # 2. Verdict Banner
+        banner_color = colors.HexColor('#10B981') if is_app and not warnings else colors.HexColor('#BE123C')
+        elements.append(Table([
+            [Paragraph(f"<font size=12 color='#FFFFFF'><b>VERDICT: {clean_text_for_pdf(status_str)}</b></font>", body_style)]
+        ], colWidths=[540], style=[
+            ('BACKGROUND', (0,0), (-1,-1), banner_color),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 8),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+        ]))
+        elements.append(Spacer(1, 8))
+
+        # 3. Patient & Employer Information
+        elements.append(Paragraph("<b>Patient & Corporate Group Employer Details</b>", header_20pt_style))
+        demo_data = [
+            [Paragraph(f"<b>Patient Name:</b> {clean_text_for_pdf(p_name)} 🔒", body_style), Paragraph(f"<b>Patient ID:</b> {clean_text_for_pdf(p_id)} 🔒", body_style)],
+            [Paragraph(f"<b>Corporate Employer:</b> {clean_text_for_pdf(p_rec.get('employer', 'N/A'))}", body_style), Paragraph(f"<b>Employer Code:</b> {clean_text_for_pdf(employer_name)}", body_style)],
+            [Paragraph(f"<b>Employment Status:</b> {clean_text_for_pdf(p_rec.get('employment_status', 'N/A'))}", body_style), Paragraph(f"<b>Background Verification:</b> {clean_text_for_pdf(p_rec.get('background_verification', 'N/A'))}", body_style)],
+            [Paragraph(f"<b>Assigned Policy Scheme:</b> {clean_text_for_pdf(p_rec.get('scheme_assigned', 'N/A'))}", body_style), Paragraph(f"<b>Assigned Insurer:</b> {clean_text_for_pdf(insurer)}", body_style)]
+        ]
+        t_demo = Table(demo_data, colWidths=[270, 270], style=[
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F1F5F9')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 8),
+        ])
+        elements.append(t_demo)
+        elements.append(Spacer(1, 8))
+
+        # 4. Scheme Limits vs Claim Evaluation Matrix
+        elements.append(Paragraph("<b>Scheme Policy Terms vs Billed Claim Matrix</b>", header_20pt_style))
+        matrix_data = [
+            ["Policy Parameter", "Scheme Policy Terms", "Billed Claim Evaluation"],
+            ["Max Annual Sum Insured Cap", max_cap, f"Billed Amount: {claim_amount}"],
+            ["Patient Remaining Sum Insured", rem_sum, "Exceeded Sum Insured Cap!" if enquiry_res.get('exceeds_remaining') else "Within Remaining Cap"],
+            ["Daily Room Rent Cap", room_cap, "Applies to Inpatient Admissions"],
+            ["Co-Pay Requirement", copay, "Deducted at Settlement"],
+            ["Pre-Existing Disease Wait", wait_period, "Verified against Doctor Notes"]
+        ]
+        t_matrix = Table([[Paragraph(clean_text_for_pdf(c), body_style) for c in row] for row in matrix_data], colWidths=[170, 170, 200], style=[
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#E2E8F0')),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+            ('TOPPADDING', (0,0), (-1,-1), 5),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+            ('LEFTPADDING', (0,0), (-1,-1), 6),
+        ])
+        elements.append(t_matrix)
+        elements.append(Spacer(1, 8))
+
+        # 5. Risk Warnings & Flags
+        elements.append(Paragraph("<b>Policy Risk Warnings & Verification Flags</b>", header_20pt_style))
+        if warnings:
+            w_data = [["#", "Corporate Policy Risk Warning"]]
+            for idx, w in enumerate(warnings, 1):
+                w_data.append([str(idx), Paragraph(f"<b>⚠️ {clean_text_for_pdf(w)}</b>", redflag_style)])
+            t_w = Table(w_data, colWidths=[30, 510], style=[
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#FFE4E6')),
+                ('GRID', (0,0), (-1,-1), 0.75, colors.HexColor('#FECDD3')),
+                ('TOPPADDING', (0,0), (-1,-1), 5),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                ('LEFTPADDING', (0,0), (-1,-1), 6),
+            ])
+            elements.append(t_w)
+        else:
+            elements.append(Table([[Paragraph("<font color='#10B981'><b>✓ Clean Claim — Fully eligible under corporate policy terms.</b></font>", body_style)]], colWidths=[540], style=[
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#ECFDF5')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#A7F3D0')),
+                ('TOPPADDING', (0,0), (-1,-1), 6),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+                ('LEFTPADDING', (0,0), (-1,-1), 10),
+            ]))
+        elements.append(Spacer(1, 8))
+
+        # 6. Patient Historical Corporate Fraud Log
+        elements.append(Paragraph("<b>Patient Historical Corporate Fraud Record Log</b>", header_20pt_style))
+        if fraud_logs:
+            f_data = [["Incident Date", "Incident Description", "Audit Settlement Status"]]
+            for f in fraud_logs:
+                f_data.append([
+                    Paragraph(clean_text_for_pdf(f.get("date", "N/A")), body_style),
+                    Paragraph(f"<b>⚠️ {clean_text_for_pdf(f.get('incident', 'N/A'))}</b>", redflag_style),
+                    Paragraph(clean_text_for_pdf(f.get("status", "N/A")), body_style)
+                ])
+            t_f = Table(f_data, colWidths=[90, 290, 160], style=[
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F1F5F9')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#CBD5E1')),
+                ('TOPPADDING', (0,0), (-1,-1), 5),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                ('LEFTPADDING', (0,0), (-1,-1), 6),
+            ])
+            elements.append(t_f)
+        else:
+            elements.append(Table([[Paragraph("<font color='#10B981'><b>✓ Clean Record — Zero prior corporate fraud incidents logged.</b></font>", body_style)]], colWidths=[540], style=[
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#ECFDF5')),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#A7F3D0')),
+                ('TOPPADDING', (0,0), (-1,-1), 6),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+                ('LEFTPADDING', (0,0), (-1,-1), 10),
+            ]))
+
+        doc.build(elements)
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    except Exception as e:
+        print(f"ReportLab Corporate Scheme PDF generation fallback: {e}")
+        info_d = {
+            "Patient": p_name,
+            "Employer": p_rec.get('employer', 'N/A'),
+            "Scheme": p_rec.get('scheme_assigned', 'N/A'),
+            "Claim Billed": claim_amount,
+            "Verdict": status_str
+        }
+        return create_pil_canvas_pdf_fallback("Corporate Policy & Scheme Eligibility Report", f"VERDICT: {status_str}", f"Corporate scheme policy audit for {p_name} ({p_rec.get('employer', 'N/A')}).", info_d, warnings, is_severe=not is_app)
+
 def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic_Audit_Report.pdf"):
     """
     Generates a high-quality PDF Forensic Audit Report for Tab 1 (Deep Single Claim Forensic Audit).
@@ -143,7 +329,6 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
         styles = getSampleStyleSheet()
 
-        # Prominent Calibri 20pt / Helvetica-Bold 20pt Styles
         title_20pt_style = ParagraphStyle('DocTitle20_T1', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
         header_20pt_style = ParagraphStyle('Header20_T1', parent=styles['Heading2'], fontSize=15, leading=19, textColor=colors.HexColor('#1E293B'), spaceBefore=10, spaceAfter=4)
         sub_style = ParagraphStyle('DocSub_T1', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#64748B'), spaceAfter=8)
@@ -153,12 +338,10 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
 
         elements = []
 
-        # 1. 20pt Document Title Header
         elements.append(Paragraph("<b>Deep Forensic Claims Investigation Report</b>", title_20pt_style))
         elements.append(Paragraph(f"Hospital Dossier: {clean_text_for_pdf(h_name)} ({clean_text_for_pdf(h_id)}) | SHA-256 Token: <code>{security_hash}</code> | Engine: {clean_text_for_pdf(llm_used)}", sub_style))
         elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#CBD5E1'), spaceAfter=8))
 
-        # 2. Risk Banner
         risk_color = colors.HexColor('#BE123C') if risk_level in ["HIGH", "SEVERE"] else colors.HexColor('#F59E0B') if risk_level == "MEDIUM" else colors.HexColor('#10B981')
         
         banner_table = Table([
@@ -175,7 +358,6 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
         elements.append(banner_table)
         elements.append(Spacer(1, 8))
 
-        # 3. 🌟 EXECUTIVE AI FORENSIC VERDICT SUMMARY (FULL UNTRUNCATED TEXT)
         elements.append(Paragraph("<b>Executive AI Audit Summary & Verdict</b>", header_20pt_style))
         summary_table = Table([[Paragraph(f"<b>AI Summary:</b> {clean_text_for_pdf(summary_text)}", summary_style)]], colWidths=[540])
         summary_table.setStyle(TableStyle([
@@ -188,7 +370,6 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
         elements.append(summary_table)
         elements.append(Spacer(1, 8))
 
-        # 4. 🚩 FLAGGED FRAUD RED FLAGS
         elements.append(Paragraph("<b>Flagged Fraud & Rule Anomalies (Red Flags)</b>", header_20pt_style))
         if red_flags and red_flags != ["None detected"]:
             rf_table_data = [["#", "Flagged Fraud Red Flag Warning"]]
@@ -216,7 +397,6 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
             elements.append(clean_table)
         elements.append(Spacer(1, 8))
 
-        # 5. Hospital & Clinical Demographics
         elements.append(Paragraph("<b>Hospital Dossier & Clinical Demographics</b>", header_20pt_style))
         demo_data = [
             [Paragraph(f"<b>Hospital Name:</b> {clean_text_for_pdf(h_name)}", body_style), Paragraph(f"<b>Hospital ID:</b> {clean_text_for_pdf(h_id)} ({clean_text_for_pdf(h_type)})", body_style)],
@@ -235,7 +415,6 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
         elements.append(t_demo)
         elements.append(Spacer(1, 8))
 
-        # 6. Multi-Dimensional Cross-Evaluation Matrix
         elements.append(Paragraph("<b>Multi-Dimensional Forensic Matrix</b>", header_20pt_style))
         matrix_table_data = [
             ["Dimension", "Status & Evaluation Findings"],
@@ -271,7 +450,7 @@ def generate_deep_forensic_report_pdf(audit_data, output_filename="Deep_Forensic
 
 def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Report.pdf"):
     """
-    Generates a high-quality PDF Forensic Fraud Audit Report for Tab 2 (AI Health Insurance Fraud Auditor API).
+    Generates a high-quality PDF Forensic Fraud Audit Report for Tab 3 (AI Health Insurance Fraud Auditor API).
     Styles document title & main headers in 20pt font size.
     Places full Executive AI Summary and Flagged Red Flags / Anomalies front and center.
     """
@@ -295,7 +474,6 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
     anomalies = audit_data.get('detected_anomalies', [])
     llm_used = audit_data.get('llm_used', 'Groq LPU API')
 
-    # SHA-256 Anonymized Security Hash
     audit_payload = f"{raw_p_name}:{raw_p_id}:{score}:{category}"
     security_hash = hashlib.sha256(audit_payload.encode('utf-8')).hexdigest()[:16].upper()
 
@@ -309,7 +487,6 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
         doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
         styles = getSampleStyleSheet()
 
-        # Prominent Calibri 20pt / Helvetica-Bold 20pt Styles
         title_20pt_style = ParagraphStyle('DocTitle20_T2', parent=styles['Heading1'], fontSize=20, leading=24, textColor=colors.HexColor('#0F172A'), spaceAfter=4)
         header_20pt_style = ParagraphStyle('Header20_T2', parent=styles['Heading2'], fontSize=15, leading=19, textColor=colors.HexColor('#1E293B'), spaceBefore=10, spaceAfter=4)
         sub_style = ParagraphStyle('DocSub_T2', parent=styles['Normal'], fontSize=9.5, textColor=colors.HexColor('#64748B'), spaceAfter=8)
@@ -319,12 +496,10 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
 
         elements = []
 
-        # 1. 20pt Document Title Header
         elements.append(Paragraph("<b>Health Insurance Fraud Investigation Audit Report</b>", title_20pt_style))
         elements.append(Paragraph(f"🔒 HIPAA Redacted Docket #: {clean_text_for_pdf(p_id)} | SHA-256 Token: <code>{security_hash}</code> | Engine: {clean_text_for_pdf(llm_used)}", sub_style))
         elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#CBD5E1'), spaceAfter=8))
 
-        # 2. Risk Banner
         risk_color = colors.HexColor('#BE123C') if category == "SEVERE" else colors.HexColor('#EF4444') if category == "HIGH" else colors.HexColor('#F59E0B') if category == "MEDIUM" else colors.HexColor('#10B981')
         
         banner_table = Table([
@@ -341,7 +516,6 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
         elements.append(banner_table)
         elements.append(Spacer(1, 8))
 
-        # 3. 🌟 EXECUTIVE AI REASONING SUMMARY (FULL UNTRUNCATED TEXT)
         elements.append(Paragraph("<b>Executive AI Audit Summary & Clinical Findings</b>", header_20pt_style))
         summary_table = Table([[Paragraph(f"<b>AI Summary:</b> {clean_text_for_pdf(summary_text)}", summary_style)]], colWidths=[540])
         summary_table.setStyle(TableStyle([
@@ -354,7 +528,6 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
         elements.append(summary_table)
         elements.append(Spacer(1, 8))
 
-        # 4. 🚩 FLAGGED FRAUD RED FLAGS & ANOMALIES TABLE
         elements.append(Paragraph("<b>Flagged Fraud & Coding Violations (Red Flags)</b>", header_20pt_style))
         if anomalies:
             anom_table_data = [["Anomaly Type", "Severity", "Code Involved", "Rule Violation Description"]]
@@ -388,7 +561,6 @@ def generate_fraud_report_pdf(audit_data, output_filename="MedIns_Fraud_Audit_Re
             elements.append(clean_table)
         elements.append(Spacer(1, 8))
 
-        # 5. Patient & Provider Demographics (HIPAA Masked)
         elements.append(Paragraph("<b>Patient & Provider Demographics (HIPAA Masked)</b>", header_20pt_style))
         demo_data = [
             [Paragraph(f"<b>Patient Name:</b> {clean_text_for_pdf(p_name)} 🔒", body_style), Paragraph(f"<b>Patient ID:</b> {clean_text_for_pdf(p_id)} 🔒", body_style)],

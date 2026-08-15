@@ -1,0 +1,22 @@
+====================================================
+VALLEY OAK MEDICAL CENTER - CORPORATE INVOICE FORM
+====================================================
+Patient Name: Robert Jenkins
+Patient ID: PAT-TCS-88392
+Employer: Tata Consultancy Services (TCS)
+Scheme: Executive Platinum Shield Cover
+Date of Service: 10/12/2026
+Provider Name: Dr. Sarah Lin, MD (Orthopedics)
+
+Diagnosis (ICD-10): M54.5 - Lumbar Spine Strain & Acute Back Pain
+Primary Procedure: CPT-72148 (MRI Lumbar Spine, without contrast)
+
+ITEMIZED CHARGES:
+1. CPT-99214: Office Visit - Established (Mod-High)  $  175.00
+2. CPT-72148: MRI Lumbar Spine                       $  950.00
+3. CPT-70551: MRI Brain                              $  950.00
+4. CPT-72148: MRI Lumbar Spine (Duplicate Line Item) $  950.00
+
+TOTAL CLAIMED AMOUNT: $3,190.00
+Status: Submitted for Corporate Insurance Audit
+====================================================
